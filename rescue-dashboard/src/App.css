@@ -29,6 +29,7 @@
 
 .brand-icon {
   font-size: 30px;
+  font-weight: 800;
 }
 
 .brand h2 {
@@ -208,96 +209,37 @@ h1 {
   color: #2563eb;
 }
 
-.map-placeholder {
+.map-placeholder.leaflet-container {
+  display: block;
+  width: 100%;
   height: 255px;
   position: relative;
   overflow: hidden;
   border-radius: 10px;
-  background-color: #e6efe4;
-  background-image:
-    linear-gradient(35deg, transparent 45%, #c8dcc5 46%, #c8dcc5 53%, transparent 54%),
-    linear-gradient(125deg, transparent 40%, #d0e2cb 41%, #d0e2cb 57%, transparent 58%);
+  background: #e6efe4;
+  z-index: 0;
 }
 
-.map-road {
-  position: absolute;
-  background: #fffdf6;
-  border: 1px solid #d9ded3;
-  border-radius: 50%;
+.leaflet-container {
+  font-family: inherit;
 }
 
-.road-one {
-  height: 24px;
-  width: 150%;
-  top: 42%;
-  left: -20%;
-  transform: rotate(-22deg);
+.leaflet-control-attribution {
+  font-size: 9px;
 }
 
-.road-two {
-  height: 20px;
-  width: 130%;
-  top: 55%;
-  left: -10%;
-  transform: rotate(40deg);
-}
-
-.map-pin {
-  position: absolute;
-  z-index: 1;
-  width: 30px;
-  height: 30px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 800;
-  box-shadow: 0 2px 6px #0002;
-}
-
-.map-pin::first-letter {
-  transform: rotate(45deg);
-}
-
-.pin-one {
-  background: #dc2626;
-  top: 22%;
-  left: 23%;
-}
-
-.pin-two {
-  background: #d97706;
-  top: 55%;
-  left: 64%;
-}
-
-.pin-three {
-  background: #dc2626;
-  top: 29%;
-  left: 76%;
-}
-
-.map-message {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
-  right: 12px;
-  background: #ffffffed;
+.leaflet-popup-content-wrapper {
   border-radius: 9px;
-  padding: 10px;
-  text-align: center;
 }
 
-.map-message strong {
-  display: block;
+.leaflet-popup-content {
+  margin: 12px 15px;
   font-size: 12px;
+  line-height: 1.5;
 }
 
-.map-message p {
-  color: #718096;
-  margin: 4px 0 0;
-  font-size: 11px;
+.incident-popup p {
+  margin: 5px 0 0;
 }
 
 .map-legend {
@@ -566,6 +508,10 @@ h1 {
   .summary-card,
   .panel {
     padding: 15px;
+  }
+
+  .map-placeholder.leaflet-container {
+    height: 255px;
   }
 
   .incident-row {

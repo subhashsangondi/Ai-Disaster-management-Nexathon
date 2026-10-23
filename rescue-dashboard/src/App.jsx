@@ -1,5 +1,12 @@
 
 import "./App.css";
+import "leaflet/dist/leaflet.css";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+} from "react-leaflet";
 
 const incidents = [
   {
@@ -9,6 +16,7 @@ const incidents = [
     location: "Village area",
     urgency: "Urgent",
     status: "Pending",
+    position: [12.9141, 74.856],
   },
   {
     id: "INC-002",
@@ -17,6 +25,7 @@ const incidents = [
     location: "Main road",
     urgency: "High",
     status: "Assigned",
+    position: [12.921, 74.842],
   },
   {
     id: "INC-003",
@@ -25,22 +34,73 @@ const incidents = [
     location: "Residential area",
     urgency: "Medium",
     status: "In Progress",
+    position: [12.905, 74.87],
   },
 ];
 
-function App() {
-  const summary = [
-    { label: "Total Incidents", value: 12, icon: "📋" },
-    { label: "Urgent Cases", value: 3, icon: "🚨" },
-    { label: "In Progress", value: 4, icon: "🛟" },
-    { label: "Resolved", value: 5, icon: "✅" },
-  ];
+const summary = [
+  { label: "Total Incidents", value: 12 },
+  { label: "Urgent Cases", value: 3 },
+  { label: "In Progress", value: 4 },
+  { label: "Resolved", value: 5 },
+];
 
+function IncidentMap() {
+  return (
+    <MapContainer
+      center={[12.9141, 74.856]}
+      zoom={13}
+      scrollWheelZoom
+      className="map-placeholder"
+    >
+      <TileLayer
+        attribution='Imagery © <a href="https://www.esri.com/">Esri</a> and its imagery providers'
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        maxZoom={19}
+      />
+
+      {incidents.map((incident) => {
+        const markerColor =
+          incident.urgency === "Urgent"
+            ? "#dc2626"
+            : incident.urgency === "High"
+              ? "#d97706"
+              : "#2563eb";
+
+        return (
+          <CircleMarker
+            key={incident.id}
+            center={incident.position}
+            radius={8}
+            pathOptions={{
+              color: "#ffffff",
+              weight: 2,
+              fillColor: markerColor,
+              fillOpacity: 1,
+            }}
+          >
+            <Popup>
+              <div className="incident-popup">
+                <strong>{incident.id}: {incident.title}</strong>
+                <p>{incident.description}</p>
+                <p>Urgency: {incident.urgency}</p>
+                <p>Status: {incident.status}</p>
+                <p>Location: {incident.location}</p>
+              </div>
+            </Popup>
+          </CircleMarker>
+        );
+      })}
+    </MapContainer>
+  );
+}
+
+function App() {
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-icon">🛡️</span>
+          <span className="brand-icon">R</span>
           <div>
             <h2>RescueGrid AI</h2>
             <p>Disaster Response</p>
@@ -48,10 +108,10 @@ function App() {
         </div>
 
         <nav className="navigation">
-          <a className="nav-link active" href="#overview">▦ Dashboard</a>
-          <a className="nav-link" href="#incidents">📋 Incidents</a>
-          <a className="nav-link" href="#map">📍 Rescue Map</a>
-          <a className="nav-link" href="#teams">👥 Rescue Teams</a>
+          <a className="nav-link active" href="#overview">Dashboard</a>
+          <a className="nav-link" href="#incidents">Incidents</a>
+          <a className="nav-link" href="#map">Rescue Map</a>
+          <a className="nav-link" href="#teams">Rescue Teams</a>
         </nav>
 
         <div className="sidebar-note">
@@ -80,7 +140,6 @@ function App() {
             <article className="summary-card" key={item.label}>
               <div className="summary-top">
                 <span>{item.label}</span>
-                <span className="summary-icon">{item.icon}</span>
               </div>
               <strong className="summary-value">{item.value}</strong>
               <span className="summary-caption">Sample statistics</span>
@@ -95,21 +154,10 @@ function App() {
                 <h2>Incident Map</h2>
                 <p>Geographic overview of reported emergencies</p>
               </div>
-              <span className="coming-soon">Part 2</span>
+              <span className="coming-soon">SATELLITE MAP</span>
             </div>
 
-            <div className="map-placeholder">
-              <div className="map-road road-one" />
-              <div className="map-road road-two" />
-              <span className="map-pin pin-one">!</span>
-              <span className="map-pin pin-two">!</span>
-              <span className="map-pin pin-three">!</span>
-              <div className="map-message">
-                <span>📍</span>
-                <strong>Interactive map coming next</strong>
-                <p>Leaflet + OpenStreetMap</p>
-              </div>
-            </div>
+            <IncidentMap />
 
             <div className="map-legend">
               <span><i className="legend-dot urgent" /> Urgent</span>
@@ -132,18 +180,21 @@ function App() {
                 <span className="progress-fill pending-fill" />
               </div>
             </div>
+
             <div className="response-item">
               <div><span>Assigned</span><strong>2</strong></div>
               <div className="progress-track">
                 <span className="progress-fill assigned-fill" />
               </div>
             </div>
+
             <div className="response-item">
               <div><span>In Progress</span><strong>4</strong></div>
               <div className="progress-track">
                 <span className="progress-fill progress-fill-active" />
               </div>
             </div>
+
             <div className="response-item">
               <div><span>Resolved</span><strong>5</strong></div>
               <div className="progress-track">
@@ -152,8 +203,11 @@ function App() {
             </div>
 
             <div className="human-review">
-              <span>ℹ️</span>
-              <p>AI recommendations support decisions. Coordinators retain final control.</p>
+              <span>INFO</span>
+              <p>
+                AI recommendations support decisions. Coordinators retain
+                final control.
+              </p>
             </div>
           </article>
         </section>
@@ -171,6 +225,7 @@ function App() {
             {incidents.map((incident) => (
               <article className="incident-row" key={incident.id}>
                 <div className="incident-symbol">!</div>
+
                 <div className="incident-details">
                   <div className="incident-title-line">
                     <h3>{incident.title}</h3>
@@ -178,10 +233,14 @@ function App() {
                       {incident.urgency}
                     </span>
                   </div>
+
                   <p>{incident.description}</p>
-                  <span className="incident-location"> {incident.location}</span>
+                  <span className="incident-location">{incident.location}</span>
                 </div>
-                <span className={`status ${incident.status.toLowerCase().replace(" ", "-")}`}>
+
+                <span
+                  className={`status ${incident.status.toLowerCase().replace(" ", "-")}`}
+                >
                   {incident.status}
                 </span>
               </article>
@@ -190,8 +249,8 @@ function App() {
         </section>
 
         <footer className="footer">
-          <span>RescueGrid AI · Rescue Coordination Platform</span>
-          <span>Prototype · Sample data only</span>
+          <span>RescueGrid AI - Rescue Coordination Platform</span>
+          <span>Prototype - Sample data only</span>
         </footer>
       </main>
     </div>
