@@ -2,62 +2,89 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { submitIncident } from "./incidents.js";
 
 const payload = {
-  category: "Flood",
-  description: "Water entering a residential building",
-  reporter_type: "Witness",
-  people_affected: null,
-  people_injured: null,
-  victim_phone: "",
-  volunteer_phone: "+91 98765 43210",
-  photos: [],
+  emergency_type: "Flood",
+  description: "Water is entering a residential building.",
   latitude: null,
   longitude: null,
   location_text: "Oak Street",
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe("submitIncident", () => {
-  it("posts the exact JSON payload and returns the server incident ID", async () => {
+  it("posts the exact public SOS payload and parses the response envelope", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      status: 201,
       json: async () => ({
-        id: 123,
-        message: "Incident report received",
-        status: "assigned",
-        reported_at: "2026-10-23T10:00:00.000Z",
+        success: true,
+        message: "Emergency report received by RescueGrid AI",
+        data: {
+          incident_id: "30000000-0000-4000-8000-000000000001",
+          status: "pending",
+          analysis_status: "pending",
+          notice: "Stored immediately",
+        },
       }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(submitIncident(payload)).resolves.toEqual({
-      id: 123,
-      message: "Incident report received",
-      status: "assigned",
-      reportedAt: "2026-10-23T10:00:00.000Z",
+      id: "30000000-0000-4000-8000-000000000001",
+      message: "Emergency report received by RescueGrid AI",
+      status: "pending",
+      analysisStatus: "pending",
+      notice: "Stored immediately",
     });
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:5000/api/incidents", {
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/sos", expect.objectContaining({
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "omit",
+      signal: expect.anything(),
       body: JSON.stringify(payload),
-    });
+    }));
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
   });
 
-  it("rejects network failures and successful responses without a valid ID", async () => {
+  it("reports network, malformed-response, and backend validation failures", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     await expect(submitIncident(payload)).rejects.toThrow(/Could not reach the reporting server/);
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: "Received" }) }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => { throw new SyntaxError(); } }));
+    await expect(submitIncident(payload)).rejects.toThrow(/unreadable response/);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, message: "Validation failed", errors: [{ field: "description", message: "Too short" }] }),
+    }));
+    await expect(submitIncident(payload)).rejects.toThrow("description: Too short");
+  });
+
+  it("rejects a successful response without an incident ID", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ success: true, message: "Received", data: { status: "pending" } }),
+    }));
     await expect(submitIncident(payload)).rejects.toThrow(/valid incident ID/);
   });
 
-  it("rejects malformed JSON and unsuccessful HTTP responses", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => { throw new SyntaxError(); } }));
-    await expect(submitIncident(payload)).rejects.toThrow(/unreadable response/);
+  it("aborts a request that exceeds the configured timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      });
+    })));
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({ message: "Service unavailable" }) }));
-    await expect(submitIncident(payload)).rejects.toThrow("Service unavailable");
+    const expectation = expect(submitIncident(payload)).rejects.toThrow(/took too long/);
+    await vi.advanceTimersByTimeAsync(10000);
+    await expectation;
   });
 });

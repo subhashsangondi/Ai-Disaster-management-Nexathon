@@ -1,87 +1,70 @@
 # RescueGrid AI — Emergency Reporting Frontend
 
-A responsive React frontend for victims, witnesses, and volunteers to report an emergency. This project covers the public reporting module only; it does not include a backend or dispatch service.
+Victim-facing React/Vite application for submitting public SOS reports to the RescueGrid AI backend. It does not require or send an operator JWT.
 
 ## Prerequisites
 
-- Node.js 20.19+ or 22.12+ (Node.js 24 is also supported)
+- Node.js 20.19+ or 22.12+
 - npm
-- The RescueGrid backend for real report submissions
+- RescueGrid backend running locally
 
-## Install and run
+## Configure and run
 
-From the project folder:
-
-```bash
+```powershell
+Copy-Item .env.example .env
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite, usually <http://localhost:5173>.
-
-Create your local environment file from the example and configure the API address:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Set `VITE_API_BASE_URL` in `.env` to the backend origin, for example:
+The default Vite URL is <http://localhost:5173>. Environment variables:
 
 ```env
-VITE_API_BASE_URL=http://localhost:5000
+VITE_API_BASE_URL=http://localhost:4000
+VITE_API_TIMEOUT_MS=10000
 ```
 
-Restart `npm run dev` after changing `.env`.
+Restart Vite after changing environment variables.
 
 ## Backend contract
 
-The frontend submits a JSON `POST` request to `${VITE_API_BASE_URL}/api/incidents`. The request body uses these exact field names:
+The frontend sends an unauthenticated JSON request to `POST ${VITE_API_BASE_URL}/api/sos`:
 
 ```json
 {
-  "category": "Flood",
-  "description": "",
-  "reporter_type": "Witness",
-  "people_affected": 3,
-  "people_injured": 1,
-  "victim_phone": "+91 98765 43210",
-  "volunteer_phone": "",
-  "photos": [],
+  "emergency_type": "Flood",
+  "description": "Water is entering a residential building.",
   "latitude": null,
   "longitude": null,
-  "location_text": "User-entered location"
+  "location_text": "Oak Street near the library"
 }
 ```
 
-`description` is optional. `people_affected` and `people_injured` are optional integer counts; an unknown count is sent as `null`, and "10 or more" is sent as `10`. Coordinates are supplied only after the user presses **Use My Current Location** and the browser returns them. If the user chooses manual location instead, latitude and longitude are `null`. The frontend accepts a report as confirmed only when the response is successful and includes a non-empty string or finite numeric `id`.
+`emergency_type` must contain 2–100 characters and `description` 10–5000 characters. A complete, valid coordinate pair or a non-empty manual location is required. Manual location is limited to 500 characters.
 
-At least one valid contact number is required: provide either `victim_phone` or `volunteer_phone`. Each field can otherwise be left blank. Phone numbers accept 7–15 digits with an optional country code. A reporter may attach up to three JPG, PNG, or WebP files, each up to 5 MB; `photos` is sent as an array of `{ "filename", "content_type", "data_url" }` objects. The backend must explicitly support and validate these additional JSON fields and image data before they can be saved or used, and allow a request size large enough for the encoded images.
-
-For the status panel, the backend may return `status` and `reported_at` (or `created_at`):
+The API responds with the standard RescueGrid envelope:
 
 ```json
 {
-  "id": 123,
-  "message": "Incident report received",
-  "status": "assigned",
-  "reported_at": "2026-10-23T10:00:00.000Z"
+  "success": true,
+  "message": "Emergency report received by RescueGrid AI",
+  "data": {
+    "incident_id": "30000000-0000-4000-8000-000000000001",
+    "status": "pending",
+    "analysis_status": "pending",
+    "notice": "This report is stored in RescueGrid AI and is not confirmation of delivery to official emergency services."
+  }
 }
 ```
 
-The status panel uses the server status for these stages: `received`/`submitted`, `assigned`/`team_assigned`/`dispatched`, `on_the_way`/`en_route`/`responding`/`in_progress`, and `resolved`. The frontend never claims a rescue team is assigned or travelling unless the server returns that status. It displays the status from the submission response; live updates after submission require the backend to provide a status lookup or push-update API. Without a server timestamp, the confirmation labels the submission time as the user's device time. The map links open Google Maps using the captured GPS coordinates and/or typed location.
+The success screen appears as soon as the backend has stored the incident. Gemini analysis is not part of this request.
 
-To test a successful submission:
+## Geolocation
 
-1. Start the backend and confirm it listens at the configured API base URL.
-2. Ensure it implements `POST /api/incidents`, accepts JSON with the fields above, and allows browser requests from the Vite origin through CORS.
-3. In the frontend, select a category and reporter type, optionally choose people counts, and provide a manual location or use GPS. Description is optional.
-4. Submit and confirm that the success panel displays the actual `id` returned by the server.
+Geolocation is requested only when the user presses **Use My Current Location**. Permission denial, unavailability, timeouts, and unsupported browsers leave the manual-location field available. Localhost is treated as a secure context by modern browsers.
 
-The backend teammate should provide the running API URL, implement the endpoint and fields above (including the required victim-or-volunteer contact number and base64-encoded photo objects), return server status and timestamp when available, configure CORS for `http://localhost:5173`, and document any authentication or additional requirements.
+## Unsupported public features
 
-## Test GPS
-
-Geolocation is requested only when you press **Use My Current Location**. Localhost is treated as a secure context by modern browsers. Allow location permission in the browser prompt to test GPS success. To test denial, block location access for `localhost` in browser site settings, reload, and press the button; the form will explain how to re-enable permission. Manual location remains available if GPS is denied, unsupported, unavailable, or times out.
+The current backend SOS schema does not accept photos, phone numbers, reporter roles, or victim counts, so the public form does not collect or fabricate persistence for them. The backend also has no victim-accessible incident-status lookup endpoint; authenticated operators can view and manage incidents through `/api/incidents`.
 
 ## Checks
 
@@ -90,18 +73,11 @@ npm test
 npm run build
 ```
 
-To run the production preview after building:
-
-```bash
-npm run preview
-```
-
 ## Common issues
 
-- **Could not reach the reporting server:** make sure the backend is running, `VITE_API_BASE_URL` has the right origin, and restart Vite after editing `.env`.
-- **CORS error in the browser:** ask the backend teammate to allow the frontend origin (`http://localhost:5173`).
-- **A response is not confirmed:** the endpoint must return a successful HTTP status and JSON containing a valid `id`.
-- **Location permission denied:** allow location access for this site in browser/device settings, or use the manual location field.
-- **GPS unavailable or timed out:** check device location services and retry, or submit with a manual location.
+- **Could not reach the reporting server:** confirm the backend is running and `VITE_API_BASE_URL` is correct.
+- **CORS error:** the backend must allow the Vite origin, normally `http://localhost:5173`.
+- **Request timed out:** increase `VITE_API_TIMEOUT_MS` only if the backend is known to be slow.
+- **Location permission denied:** use the manual-location field or allow browser location access and retry.
 
-This demo form does not itself dispatch rescue services. In immediate danger, contact local emergency services directly.
+This portal does not itself dispatch official emergency services. In immediate danger, contact local emergency services directly.

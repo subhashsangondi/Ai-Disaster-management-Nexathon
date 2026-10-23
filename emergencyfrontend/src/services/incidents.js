@@ -1,4 +1,6 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
+const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
+const API_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 10000;
 
 export class IncidentApiError extends Error {
   constructor(message) {
@@ -7,29 +9,42 @@ export class IncidentApiError extends Error {
   }
 }
 
-function getIncidentId(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
-  const id = data.id;
-  if (typeof id === "number" && Number.isFinite(id)) return id;
-  if (typeof id === "string" && id.trim()) return id.trim();
-  return null;
+function validationMessage(body) {
+  if (!Array.isArray(body?.errors) || body.errors.length === 0) return "";
+  return body.errors
+    .map((error) => {
+      const field = typeof error?.field === "string" ? error.field.replaceAll("_", " ") : "";
+      const message = typeof error?.message === "string" ? error.message : "Invalid value";
+      return field ? `${field}: ${message}` : message;
+    })
+    .join("; ");
 }
 
 export async function submitIncident(payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   let response;
+
   try {
-    response = await fetch(`${API_BASE_URL}/api/incidents`, {
+    response = await fetch(`${API_BASE_URL}/api/sos`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "omit",
+      signal: controller.signal,
       body: JSON.stringify(payload),
     });
-  } catch {
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new IncidentApiError("The reporting server took too long to respond. Your report was not confirmed; please try again.");
+    }
     throw new IncidentApiError("Could not reach the reporting server. Check that the backend is running and try again.");
+  } finally {
+    clearTimeout(timeoutId);
   }
 
-  let data;
+  let body;
   try {
-    data = await response.json();
+    body = await response.json();
   } catch {
     throw new IncidentApiError(
       response.ok
@@ -38,25 +53,22 @@ export async function submitIncident(payload) {
     );
   }
 
-  if (!response.ok) {
-    const detail = data && typeof data.message === "string" ? data.message.trim() : "";
-    throw new IncidentApiError(detail || `The reporting server returned an error (HTTP ${response.status}). Please try again.`);
+  if (!response.ok || body?.success !== true) {
+    const detail = validationMessage(body);
+    const message = typeof body?.message === "string" ? body.message.trim() : "";
+    throw new IncidentApiError(detail || message || `The reporting server returned an error (HTTP ${response.status}). Please try again.`);
   }
 
-  const id = getIncidentId(data);
-  if (id === null) {
+  const incidentId = body?.data?.incident_id;
+  if ((typeof incidentId !== "string" || !incidentId.trim()) && !(typeof incidentId === "number" && Number.isFinite(incidentId))) {
     throw new IncidentApiError("The server response did not include a valid incident ID. Your report was not confirmed; please try again.");
   }
 
   return {
-    id,
-    message: typeof data.message === "string" ? data.message.trim() : "",
-    status: typeof data.status === "string" ? data.status.trim() : "",
-    reportedAt:
-      typeof data.reported_at === "string"
-        ? data.reported_at
-        : typeof data.created_at === "string"
-          ? data.created_at
-          : "",
+    id: typeof incidentId === "string" ? incidentId.trim() : incidentId,
+    message: typeof body.message === "string" ? body.message.trim() : "",
+    status: typeof body.data.status === "string" ? body.data.status.trim() : "",
+    analysisStatus: typeof body.data.analysis_status === "string" ? body.data.analysis_status.trim() : "",
+    notice: typeof body.data.notice === "string" ? body.data.notice.trim() : "",
   };
 }

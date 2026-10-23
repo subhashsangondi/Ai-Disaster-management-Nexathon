@@ -3,45 +3,38 @@ import { validateIncident } from "./validation.js";
 
 const validIncident = {
   category: "Flood",
-  description: "",
-  reporter_type: "Witness",
-  people_affected: null,
-  people_injured: null,
+  description: "Water is entering the ground floor.",
   latitude: null,
   longitude: null,
-  location_text: "  Oak Street near the library  ",
+  location_text: "Oak Street near the library",
 };
 
 describe("validateIncident", () => {
-  it("accepts a valid report with manual location and no GPS", () => {
+  it("accepts a backend-compatible report with manual location", () => {
     expect(validateIncident(validIncident)).toEqual({});
   });
 
-  it("requires category, reporter type, and a location but not a description", () => {
-    expect(validateIncident({ ...validIncident, category: " ", reporter_type: "", location_text: "" })).toEqual({
+  it("requires emergency type, a 10-character description, and location", () => {
+    expect(validateIncident({ ...validIncident, category: " ", description: "short", location_text: "" })).toEqual({
       category: "Choose an emergency category.",
-      reporter_type: "Choose who is reporting this emergency.",
+      description: "Describe the emergency in at least 10 characters.",
       location: "Use your current location or enter a location manually.",
     });
   });
 
-  it("rejects overlong descriptions and out-of-range GPS without manual fallback", () => {
+  it("rejects an overlong description and invalid GPS without a fallback", () => {
     const errors = validateIncident({
       ...validIncident,
-      description: "x".repeat(1001),
+      description: "x".repeat(5001),
       latitude: 91,
       longitude: 181,
       location_text: "",
     });
-    expect(errors.description).toContain("no more than 1000 characters");
+    expect(errors.description).toContain("5000");
     expect(errors.location).toContain("GPS coordinates are invalid");
   });
 
-  it("requires complete GPS pairs if manual location is empty", () => {
+  it("requires a complete coordinate pair when manual location is empty", () => {
     expect(validateIncident({ ...validIncident, latitude: 12, location_text: "" }).location).toContain("complete latitude");
-  });
-
-  it("rejects an injured count above the affected count", () => {
-    expect(validateIncident({ ...validIncident, people_affected: 2, people_injured: 3 }).people_injured).toContain("cannot exceed");
   });
 });

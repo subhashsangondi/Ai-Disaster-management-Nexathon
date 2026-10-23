@@ -1,25 +1,9 @@
 import { useState } from "react";
-import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck, Users } from "lucide-react";
+import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck } from "lucide-react";
 import EmergencyReportForm from "./components/EmergencyReportForm.jsx";
-
-const responseStages = [
-  { label: "Report submitted", values: ["submitted", "received", "pending", "open"] },
-  { label: "Rescue team assigned", values: ["assigned", "team_assigned", "dispatched"] },
-  { label: "Rescue team on the way", values: ["en_route", "on_the_way", "responding", "in_progress"] },
-  { label: "Incident resolved", values: ["resolved", "closed", "complete", "completed"] },
-];
 
 function normalizeStatus(status) {
   return (status || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-}
-
-function getReportedStage(status) {
-  const normalized = normalizeStatus(status);
-  if (!normalized) return 0;
-  const stageIndex = responseStages.findIndex((stage, index) =>
-    index > 0 && stage.values.includes(normalized),
-  );
-  return Math.max(stageIndex, 0);
 }
 
 function formatReportedAt(value) {
@@ -34,10 +18,9 @@ function formatReportedAt(value) {
 export default function App() {
   const [incidentProgress, setIncidentProgress] = useState(null);
   const isConfirmed = incidentProgress?.id !== undefined;
-  const reportedStage = isConfirmed ? getReportedStage(incidentProgress.status) : -1;
   const reportedAt = incidentProgress?.reportedAt || "";
   const confirmedStatusLabel = isConfirmed
-    ? responseStages[reportedStage].label
+    ? normalizeStatus(incidentProgress.status || "pending").replaceAll("_", " ")
     : "";
 
   return (
@@ -109,25 +92,8 @@ export default function App() {
                       </p>
                     )}
                   </div>
-                  <ol className="mt-5 space-y-4" aria-label="Rescue response progress">
-                    {responseStages.map((stage, index) => {
-                      const isComplete = index <= reportedStage;
-                      const isCurrent = index === reportedStage;
-                      return (
-                        <li key={stage.label} className="flex items-center gap-3">
-                          <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-xs ${isComplete ? "border-emerald-300 bg-emerald-400 text-[#102238]" : "border-white/20 text-slate-500"}`}>
-                            {isComplete ? <CheckCircle2 aria-hidden="true" size={15} /> : index + 1}
-                          </span>
-                          <span className={`text-sm ${isCurrent ? "font-semibold text-white" : isComplete ? "text-emerald-200" : "text-slate-400"}`}>
-                            {stage.label}
-                            {isCurrent && <span className="sr-only"> (current status)</span>}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ol>
                   <p className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-                    Response progress is based on the latest status returned by the server.
+                    The public portal confirms receipt only. Live status tracking is not available through the public API.
                   </p>
                 </>
               ) : (
@@ -141,7 +107,7 @@ export default function App() {
                   </p>
                   <div className="mt-5 flex items-start gap-2 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
                     <ArrowUpRight aria-hidden="true" className="mt-0.5 shrink-0 text-orange-300" size={15} />
-                    Team assignment and travel updates appear only when confirmed by the response service.
+                    Rescue-team assignment and later status updates are available only to authenticated operators.
                   </div>
                 </>
               )}

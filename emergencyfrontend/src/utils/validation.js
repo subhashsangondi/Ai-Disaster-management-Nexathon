@@ -1,22 +1,16 @@
-export const MAX_DESCRIPTION_LENGTH = 1000;
+export const MIN_DESCRIPTION_LENGTH = 10;
+export const MAX_DESCRIPTION_LENGTH = 5000;
 
 export function validateIncident(values) {
   const errors = {};
-
-  if (!values.category.trim()) errors.category = "Choose an emergency category.";
-  if (!values.reporter_type.trim()) errors.reporter_type = "Choose who is reporting this emergency.";
-
+  const emergencyType = values.category.trim();
   const description = values.description.trim();
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
-    errors.description = `Description must be no more than ${MAX_DESCRIPTION_LENGTH} characters.`;
-  }
 
-  if (
-    values.people_affected !== null &&
-    values.people_injured !== null &&
-    values.people_injured > values.people_affected
-  ) {
-    errors.people_injured = "Injured people cannot exceed the number of people affected.";
+  if (emergencyType.length < 2) errors.category = "Choose an emergency category.";
+  if (description.length < MIN_DESCRIPTION_LENGTH) {
+    errors.description = `Describe the emergency in at least ${MIN_DESCRIPTION_LENGTH} characters.`;
+  } else if (description.length > MAX_DESCRIPTION_LENGTH) {
+    errors.description = `Description must be no more than ${MAX_DESCRIPTION_LENGTH} characters.`;
   }
 
   const hasLatitude = values.latitude !== null && values.latitude !== undefined;

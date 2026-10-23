@@ -66,7 +66,7 @@ export default function LocationPicker({ values, onChange, error }) {
 
       <div className="mt-4">
         <label htmlFor="location_text" className="mb-1.5 block text-sm font-medium text-slate-800">Manual location</label>
-        <input id="location_text" type="text" value={values.location_text} onChange={(event) => onChange("location_text", event.target.value)} maxLength="300" placeholder="Address, landmark, neighborhood, or directions" aria-invalid={Boolean(error)} aria-describedby={error ? "location-error" : "location-hint"} className="form-control" />
+        <input id="location_text" type="text" value={values.location_text} onChange={(event) => onChange("location_text", event.target.value)} maxLength="500" placeholder="Address, landmark, neighborhood, or directions" aria-invalid={Boolean(error)} aria-describedby={error ? "location-error" : "location-hint"} className="form-control" />
         <p id={error ? "location-error" : "location-hint"} className={error ? "field-error" : "mt-1.5 text-xs text-slate-500"}>
           {error || "At least one location method is required."}
         </p>
