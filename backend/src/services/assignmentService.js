@@ -1,0 +1,91 @@
+const db = require('../config/database');
+const { AppError } = require('../utils/apiResponse');
+
+async function assignTeam({ incidentId, teamId, assignedBy }, database = db) {
+  const client = await database.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const incidentResult = await client.query(
+      'SELECT id, status, assigned_team_id FROM incidents WHERE id = $1 FOR UPDATE',
+      [incidentId],
+    );
+    const incident = incidentResult.rows[0];
+    if (!incident) throw new AppError(404, 'Incident not found');
+    if (incident.assigned_team_id || incident.status !== 'pending') {
+      throw new AppError(409, 'Incident already has an assignment or is not pending');
+    }
+
+    const teamResult = await client.query(
+      'SELECT id, team_name, availability FROM rescue_teams WHERE id = $1 FOR UPDATE',
+      [teamId],
+    );
+    const team = teamResult.rows[0];
+    if (!team) throw new AppError(404, 'Rescue team not found');
+    if (team.availability !== 'available') throw new AppError(409, 'Rescue team is not available');
+
+    const assignmentResult = await client.query(
+      `INSERT INTO incident_assignments (incident_id, team_id, assigned_by)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [incidentId, teamId, assignedBy],
+    );
+    await client.query(
+      `UPDATE incidents SET assigned_team_id = $1, status = 'assigned', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [teamId, incidentId],
+    );
+    await client.query("UPDATE rescue_teams SET availability = 'busy' WHERE id = $1", [teamId]);
+    await client.query('COMMIT');
+
+    return { assignment: assignmentResult.rows[0], team: { ...team, availability: 'busy' } };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') throw new AppError(409, 'Incident already has an assignment');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+const allowedTransitions = {
+  pending: [],
+  assigned: ['in_progress'],
+  in_progress: ['resolved'],
+  resolved: [],
+};
+
+async function updateIncidentStatus({ incidentId, status }, database = db) {
+  const client = await database.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      'SELECT id, status, assigned_team_id FROM incidents WHERE id = $1 FOR UPDATE',
+      [incidentId],
+    );
+    const incident = result.rows[0];
+    if (!incident) throw new AppError(404, 'Incident not found');
+    if (!allowedTransitions[incident.status]?.includes(status)) {
+      throw new AppError(409, `Cannot transition incident from ${incident.status} to ${status}`);
+    }
+
+    const updatedResult = await client.query(
+      `UPDATE incidents SET status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 RETURNING *`,
+      [status, incidentId],
+    );
+    if (status === 'resolved' && incident.assigned_team_id) {
+      await client.query(
+        "UPDATE rescue_teams SET availability = 'available' WHERE id = $1",
+        [incident.assigned_team_id],
+      );
+    }
+    await client.query('COMMIT');
+    return updatedResult.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { assignTeam, updateIncidentStatus, allowedTransitions };
