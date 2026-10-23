@@ -53,11 +53,21 @@ function IncidentMap() {
       scrollWheelZoom
       className="map-placeholder"
     >
-      <TileLayer
+
+    //offline
+    <TileLayer
+      url="/offline-tiles/{z}/{x}/{y}.png"
+      minZoom={0}
+      maxZoom={14}
+      attribution="© OpenStreetMap contributors"
+    />
+
+
+     {/* <TileLayer
         attribution='Imagery © <a href="https://www.esri.com/">Esri</a> and its imagery providers'
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         maxZoom={19}
-      />
+      />*/}
 
       {incidents.map((incident) => {
         const markerColor =
