@@ -16,6 +16,8 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:5173'),
   SOS_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   SOS_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  PUBLIC_TRACK_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  PUBLIC_TRACK_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   GEMINI_API_KEY: z.string().min(1).optional(),

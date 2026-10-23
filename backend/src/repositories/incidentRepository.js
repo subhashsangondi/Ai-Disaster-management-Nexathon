@@ -3,24 +3,40 @@ const db = require('../config/database');
 const incidentColumns = `
   i.id, i.reporter_id, i.emergency_type, i.description,
   i.latitude, i.longitude, i.location_text, i.status,
-  i.assigned_team_id, i.created_at, i.updated_at`;
+  i.assigned_team_id, i.resolved_at, i.resolved_by, i.created_at, i.updated_at`;
 
 async function createIncident(data) {
-  const result = await db.query(
-    `INSERT INTO incidents
-      (reporter_id, emergency_type, description, latitude, longitude, location_text, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'pending')
-     RETURNING *`,
-    [
-      data.reporter_id || null,
-      data.emergency_type,
-      data.description,
-      data.latitude ?? null,
-      data.longitude ?? null,
-      data.location_text || null,
-    ],
-  );
-  return result.rows[0];
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `INSERT INTO incidents
+        (reporter_id, emergency_type, description, latitude, longitude, location_text, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+       RETURNING *`,
+      [
+        data.reporter_id || null,
+        data.emergency_type,
+        data.description,
+        data.latitude ?? null,
+        data.longitude ?? null,
+        data.location_text || null,
+      ],
+    );
+    if (data.tracking_token_hash) {
+      await client.query(
+        'INSERT INTO incident_tracking_tokens (incident_id, token_hash) VALUES ($1, $2)',
+        [result.rows[0].id, data.tracking_token_hash],
+      );
+    }
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function listIncidents({ status, urgency, emergency_type, page, limit }) {
@@ -90,7 +106,16 @@ async function getIncidentById(id, client = db) {
        CASE WHEN a.id IS NULL THEN NULL ELSE row_to_json(a) END AS latest_analysis,
        CASE WHEN t.id IS NULL THEN NULL ELSE
          json_build_object('id', t.id, 'team_name', t.team_name, 'availability', t.availability)
-       END AS assigned_team
+       END AS assigned_team,
+       CASE WHEN assignment.id IS NULL THEN NULL ELSE
+         json_build_object(
+           'id', assignment.id, 'progress_status', assignment.progress_status,
+           'assigned_at', assignment.assigned_at,
+           'acknowledged_at', assignment.acknowledged_at,
+           'notification_created_at', notification.created_at,
+           'notification_read_at', notification.read_at,
+           'notification_acknowledged_at', notification.acknowledged_at
+         ) END AS assignment
      FROM incidents i
      LEFT JOIN LATERAL (
        SELECT id, incident_id, disaster_type, urgency, victim_count, summary,
@@ -99,6 +124,8 @@ async function getIncidentById(id, client = db) {
        ORDER BY analyzed_at DESC LIMIT 1
      ) a ON true
      LEFT JOIN rescue_teams t ON t.id = i.assigned_team_id
+     LEFT JOIN incident_assignments assignment ON assignment.incident_id = i.id
+     LEFT JOIN assignment_notifications notification ON notification.assignment_id = assignment.id
      WHERE i.id = $1`,
     [id],
   );

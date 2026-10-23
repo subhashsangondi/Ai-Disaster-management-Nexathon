@@ -8,6 +8,8 @@ const sosRoutes = require('./routes/sosRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const publicRoutes = require('./routes/publicRoutes');
+const responderRoutes = require('./routes/responderRoutes');
 const { AppError, success } = require('./utils/apiResponse');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -41,6 +43,8 @@ function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api/sos', sosRoutes);
+  app.use('/api/public', publicRoutes);
+  app.use('/api/responder', responderRoutes);
   app.use('/api/incidents', incidentRoutes);
   app.use('/api/teams', teamRoutes);
   app.use('/api/dashboard', dashboardRoutes);

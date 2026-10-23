@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitIncident } from "./incidents.js";
+import { submitIncident, trackIncident } from "./incidents.js";
 
 const payload = {
   emergency_type: "Flood",
@@ -27,6 +27,7 @@ describe("submitIncident", () => {
           status: "pending",
           analysis_status: "pending",
           notice: "Stored immediately",
+          tracking_token: "private-token-value",
         },
       }),
     });
@@ -38,6 +39,7 @@ describe("submitIncident", () => {
       status: "pending",
       analysisStatus: "pending",
       notice: "Stored immediately",
+      trackingToken: "private-token-value",
     });
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/sos", expect.objectContaining({
       method: "POST",
@@ -47,6 +49,21 @@ describe("submitIncident", () => {
       body: JSON.stringify(payload),
     }));
     expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
+  });
+
+  it("tracks with the private token header and does not send an incident UUID", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { incident_reference: "INC-1", status: "assigned" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(trackIncident(" private-token ")).resolves.toEqual({ incident_reference: "INC-1", status: "assigned" });
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/public/incidents/track", expect.objectContaining({
+      method: "GET",
+      headers: { Accept: "application/json", "X-Incident-Tracking-Token": "private-token" },
+      credentials: "omit",
+    }));
   });
 
   it("reports network, malformed-response, and backend validation failures", async () => {

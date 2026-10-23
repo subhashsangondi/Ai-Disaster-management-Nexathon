@@ -7,10 +7,18 @@ import {
   assignTeam,
   getIncident,
   getIncidentAnalysis,
+  getIncidentCompletion,
+  getIncidentProgress,
   listIncidents,
   listTeams,
+  listResponderAssignments,
+  listResponderNotifications,
   loginOperator,
   updateIncidentStatus,
+  acknowledgeResponderAssignment,
+  submitResponderProgress,
+  submitResponderCompletion,
+  reviewCompletion,
 } from "../src/services/api.js";
 
 const originalFetch = globalThis.fetch;
@@ -85,4 +93,37 @@ test("authorization errors retain the HTTP status for session expiry handling", 
 test("network failures produce a meaningful API error", async () => {
   globalThis.fetch = async () => { throw new TypeError("offline"); };
   await assert.rejects(() => listIncidents("jwt"), /Could not reach the RescueGrid API/);
+});
+
+test("responder mission operations use role-scoped endpoints and exact payloads", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/assignments")) return response({ success: true, data: { assignments: [{ id: "assignment-1" }] } });
+    if (url.endsWith("/notifications")) return response({ success: true, data: { notifications: [{ id: "notification-1" }] } });
+    return response({ success: true, message: "Saved", data: {} });
+  };
+  assert.equal((await listResponderAssignments("jwt"))[0].id, "assignment-1");
+  assert.equal((await listResponderNotifications("jwt"))[0].id, "notification-1");
+  await acknowledgeResponderAssignment("jwt", "assignment-1");
+  await submitResponderProgress("jwt", "assignment-1", "en_route", "Leaving base");
+  await submitResponderCompletion("jwt", "assignment-1", "Three people assisted safely.", "3");
+  assert.equal(requests[2].options.body, undefined);
+  assert.deepEqual(JSON.parse(requests[3].options.body), { progress_status: "en_route", notes: "Leaving base" });
+  assert.deepEqual(JSON.parse(requests[4].options.body), { completion_summary: "Three people assisted safely.", people_assisted: 3 });
+  for (const item of requests) assert.equal(item.options.headers.Authorization, "Bearer jwt");
+});
+
+test("operator response review APIs parse histories and enforce rejection reasons in payload", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/progress")) return response({ success: true, data: { events: [{ progress_status: "arrived" }] } });
+    if (url.endsWith("/completion")) return response({ success: true, data: { reports: [{ review_status: "pending" }], evidence_photos_supported: false } });
+    return response({ success: true, message: "Reviewed", data: { decision: "rejected" } });
+  };
+  assert.equal((await getIncidentProgress("jwt", "incident-1"))[0].progress_status, "arrived");
+  assert.equal((await getIncidentCompletion("jwt", "incident-1")).reports[0].review_status, "pending");
+  await reviewCompletion("jwt", "incident-1", "reject", "Summary needs more detail");
+  assert.deepEqual(JSON.parse(requests[2].options.body), { reason: "Summary needs more detail" });
 });

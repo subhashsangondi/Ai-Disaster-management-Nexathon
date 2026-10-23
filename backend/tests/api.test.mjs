@@ -41,6 +41,7 @@ describe('SOS reporting', () => {
     expect(response.status).toBe(201);
     expect(response.body.success).toBe(true);
     expect(response.body.data).toMatchObject({ incident_id: incidentId, status: 'pending' });
+    expect(response.body.data.tracking_token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
     expect(response.body.data.notice).toMatch(/not confirmation/i);
     expect(create).toHaveBeenCalledOnce();
   });

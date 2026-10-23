@@ -2,6 +2,7 @@ const incidentRepository = require('../repositories/incidentRepository');
 const aiService = require('../services/aiService');
 const duplicateService = require('../services/duplicateService');
 const assignmentService = require('../services/assignmentService');
+const responseService = require('../services/responseService');
 const { AppError, success } = require('../utils/apiResponse');
 
 async function listIncidents(req, res) {
@@ -53,8 +54,49 @@ async function updateStatus(req, res) {
   const incident = await assignmentService.updateIncidentStatus({
     incidentId: req.params.id,
     status: req.body.status,
+    updatedBy: req.user.user_id,
   });
   return success(res, { message: 'Incident status updated', data: incident });
 }
 
-module.exports = { listIncidents, getIncident, analyze, getAnalysis, assign, updateStatus };
+async function getProgress(req, res) {
+  const events = await responseService.getIncidentProgress(req.params.id);
+  return success(res, { data: { events } });
+}
+
+async function getCompletion(req, res) {
+  const reports = await responseService.getIncidentCompletion(req.params.id);
+  return success(res, { data: { reports, evidence_photos_supported: false } });
+}
+
+async function approveCompletion(req, res) {
+  const decision = await responseService.reviewCompletion({
+    incidentId: req.params.id,
+    operatorId: req.user.user_id,
+    decision: 'approved',
+  });
+  return success(res, { message: 'Completion approved and incident resolved', data: decision });
+}
+
+async function rejectCompletion(req, res) {
+  const decision = await responseService.reviewCompletion({
+    incidentId: req.params.id,
+    operatorId: req.user.user_id,
+    decision: 'rejected',
+    reason: req.body.reason,
+  });
+  return success(res, { message: 'Completion rejected; response remains active', data: decision });
+}
+
+module.exports = {
+  listIncidents,
+  getIncident,
+  analyze,
+  getAnalysis,
+  assign,
+  updateStatus,
+  getProgress,
+  getCompletion,
+  approveCompletion,
+  rejectCompletion,
+};

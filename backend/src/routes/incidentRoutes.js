@@ -8,6 +8,7 @@ const {
   assignmentSchema,
   statusSchema,
 } = require('../validators/incidentValidator');
+const { rejectionSchema } = require('../validators/responseValidator');
 
 const router = express.Router();
 router.use(authenticate, authorize('operator', 'admin'));
@@ -16,6 +17,19 @@ router.get('/', validateRequest(incidentFiltersSchema, 'query'), controller.list
 router.get('/:id', validateRequest(uuidParamsSchema, 'params'), controller.getIncident);
 router.post('/:id/analyze', validateRequest(uuidParamsSchema, 'params'), controller.analyze);
 router.get('/:id/analysis', validateRequest(uuidParamsSchema, 'params'), controller.getAnalysis);
+router.get('/:id/progress', validateRequest(uuidParamsSchema, 'params'), controller.getProgress);
+router.get('/:id/completion', validateRequest(uuidParamsSchema, 'params'), controller.getCompletion);
+router.post(
+  '/:id/completion/approve',
+  validateRequest(uuidParamsSchema, 'params'),
+  controller.approveCompletion,
+);
+router.post(
+  '/:id/completion/reject',
+  validateRequest(uuidParamsSchema, 'params'),
+  validateRequest(rejectionSchema),
+  controller.rejectCompletion,
+);
 router.patch(
   '/:id/assign',
   validateRequest(uuidParamsSchema, 'params'),

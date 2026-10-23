@@ -10,13 +10,22 @@ import {
   getDashboardStats,
   getIncident,
   getIncidentAnalysis,
+  getIncidentCompletion,
+  getIncidentProgress,
   incidentPollMs,
   listIncidents,
   listTeams,
+  listResponderAssignments,
+  listResponderNotifications,
   loginOperator,
+  acknowledgeResponderAssignment,
+  markResponderNotificationRead,
   readOperatorSession,
   saveOperatorSession,
+  submitResponderCompletion,
+  submitResponderProgress,
   updateIncidentStatus,
+  reviewCompletion,
 } from "./services/api.js";
 
 const STATUS_LABELS = {
@@ -72,7 +81,7 @@ function LoginScreen({ message, onLogin }) {
     setIsSubmitting(true);
     try {
       const auth = await loginOperator(email, password);
-      if (!["operator", "admin"].includes(auth?.user?.role)) {
+      if (!["operator", "admin", "responder"].includes(auth?.user?.role)) {
         throw new ApiError("This account is not authorized to access rescue operations.", 403);
       }
       onLogin(auth);
@@ -94,8 +103,8 @@ function LoginScreen({ message, onLogin }) {
           </div>
         </div>
         <p className="eyebrow">SECURE OPERATIONS ACCESS</p>
-        <h1 id="login-title">Operator sign in</h1>
-        <p className="login-copy">Use an authorized operator or administrator account.</p>
+        <h1 id="login-title">Operations sign in</h1>
+        <p className="login-copy">Use an authorized operator, administrator, or responder account.</p>
         {(message || error) && <div className={error ? "alert error" : "alert info"} role={error ? "alert" : "status"}>{error || message}</div>}
         <form onSubmit={handleSubmit} className="login-form">
           <label htmlFor="email">Email</label>
@@ -107,6 +116,122 @@ function LoginScreen({ message, onLogin }) {
           </button>
         </form>
         <p className="security-note">Credentials are sent only to the configured RescueGrid API. The JWT is kept in this browser tab session.</p>
+      </section>
+    </main>
+  );
+}
+
+const NEXT_PROGRESS = {
+  acknowledged: "en_route",
+  en_route: "arrived",
+  arrived: "rescue_in_progress",
+};
+
+function progressLabel(status) {
+  return (status || "unknown").replaceAll("_", " ");
+}
+
+function ResponderDashboard({ session, onLogout }) {
+  const [assignments, setAssignments] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [notes, setNotes] = useState({});
+  const [completion, setCompletion] = useState({});
+
+  const refresh = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setIsLoading(true);
+    try {
+      const [nextAssignments, nextNotifications] = await Promise.all([
+        listResponderAssignments(session.token),
+        listResponderNotifications(session.token),
+      ]);
+      setAssignments(nextAssignments);
+      setNotifications(nextNotifications);
+      setError("");
+    } catch (refreshError) {
+      if (refreshError instanceof ApiError && refreshError.status === 401) onLogout("Your session expired. Sign in again.");
+      else setError(apiMessage(refreshError, "Could not load assigned missions."));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onLogout, session.token]);
+
+  useEffect(() => {
+    const initialId = window.setTimeout(() => refresh(), 0);
+    const intervalId = window.setInterval(() => refresh({ quiet: true }), incidentPollMs);
+    return () => { window.clearTimeout(initialId); window.clearInterval(intervalId); };
+  }, [refresh]);
+
+  async function run(assignmentId, operation) {
+    setBusyId(assignmentId);
+    setError("");
+    setMessage("");
+    try {
+      const result = await operation();
+      setMessage(result?.message || "Update saved.");
+      await refresh({ quiet: true });
+    } catch (actionError) {
+      if (actionError instanceof ApiError && actionError.status === 401) onLogout("Your session expired. Sign in again.");
+      else setError(apiMessage(actionError, "The update could not be saved."));
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function readNotification(notificationId) {
+    try {
+      await markResponderNotificationRead(session.token, notificationId);
+      await refresh({ quiet: true });
+    } catch (readError) {
+      setError(apiMessage(readError, "Notification could not be marked read."));
+    }
+  }
+
+  const unread = notifications.filter((notification) => !notification.read_at);
+  if (isLoading) return <main className="loading-page"><div className="loading-spinner" /><h1>Loading assigned missions...</h1></main>;
+
+  return (
+    <main className="responder-page">
+      <header className="responder-header">
+        <div><p className="eyebrow">FIELD RESPONSE</p><h1>My rescue missions</h1><p>{session.user.name} · {unread.length} unread notification{unread.length === 1 ? "" : "s"}</p></div>
+        <div className="responder-header-actions"><button className="secondary-button" type="button" onClick={() => refresh()}>Refresh</button><button className="text-button" type="button" onClick={() => onLogout("")}>Sign out</button></div>
+      </header>
+      {error && <div className="alert error" role="alert">{error}</div>}
+      {message && <div className="alert success" role="status">{message}</div>}
+
+      <section className="responder-section" aria-labelledby="notification-title">
+        <div className="panel-heading"><div><h2 id="notification-title">Team notifications</h2><p>Notification receipt does not count as acknowledgment.</p></div><span className="incident-count">{unread.length} unread</span></div>
+        {notifications.length === 0 ? <div className="empty-state">No assignment notifications.</div> : notifications.map((notification) => (
+          <article className={`notification-card ${notification.read_at ? "" : "unread"}`} key={notification.id}>
+            <div><strong>{notification.emergency_type} · {notification.urgency}</strong><p>{notification.location_text || "Location details are in the mission."}</p><small>Assigned {formatDate(notification.created_at)}</small></div>
+            {!notification.read_at && <button className="secondary-button" type="button" onClick={() => readNotification(notification.id)}>Mark read</button>}
+          </article>
+        ))}
+      </section>
+
+      <section className="responder-section" aria-labelledby="missions-title">
+        <div className="panel-heading"><div><h2 id="missions-title">Active missions</h2><p>Only assignments belonging to your team are shown.</p></div></div>
+        {assignments.length === 0 ? <div className="empty-state">No active missions are assigned to your team.</div> : assignments.map((assignment) => {
+          const next = NEXT_PROGRESS[assignment.progress_status];
+          const draft = completion[assignment.id] || { summary: "", people: "" };
+          return (
+            <article className="mission-card" key={assignment.id}>
+              <div className="mission-heading"><div><p className="eyebrow">{assignment.team_name}</p><h2>{assignment.emergency_type}</h2><p>{assignment.location_text || `${assignment.latitude}, ${assignment.longitude}`}</p></div><span className="status in-progress">{progressLabel(assignment.progress_status)}</span></div>
+              <p className="mission-description">{assignment.description}</p>
+              <div className="mission-actions">
+                {assignment.progress_status === "assigned" && <button className="primary-button" disabled={busyId === assignment.id} type="button" onClick={() => run(assignment.id, () => acknowledgeResponderAssignment(session.token, assignment.id))}>{busyId === assignment.id ? "Saving..." : "Acknowledge assignment"}</button>}
+                {next && <><label htmlFor={`notes-${assignment.id}`}>Optional field notes</label><textarea id={`notes-${assignment.id}`} rows="3" maxLength="2000" value={notes[assignment.id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [assignment.id]: event.target.value }))} /><button className="primary-button" disabled={busyId === assignment.id} type="button" onClick={() => run(assignment.id, () => submitResponderProgress(session.token, assignment.id, next, notes[assignment.id] || ""))}>Report {progressLabel(next)}</button></>}
+                {assignment.progress_status === "rescue_in_progress" && <><label htmlFor={`summary-${assignment.id}`}>Completion summary</label><textarea id={`summary-${assignment.id}`} rows="4" minLength="10" maxLength="5000" value={draft.summary} onChange={(event) => setCompletion((current) => ({ ...current, [assignment.id]: { ...draft, summary: event.target.value } }))} /><label htmlFor={`people-${assignment.id}`}>People assisted (optional)</label><input id={`people-${assignment.id}`} type="number" min="0" value={draft.people} onChange={(event) => setCompletion((current) => ({ ...current, [assignment.id]: { ...draft, people: event.target.value } }))} /><button className="primary-button" disabled={busyId === assignment.id || draft.summary.trim().length < 10} type="button" onClick={() => run(assignment.id, () => submitResponderCompletion(session.token, assignment.id, draft.summary, draft.people))}>Request completion review</button><p className="field-note">Submitting does not resolve the incident. An operator must verify and approve it.</p></>}
+                {assignment.progress_status === "completion_requested" && <div className="alert info">Completion is awaiting operator review.</div>}
+                {assignment.latest_completion?.review_status === "rejected" && <div className="alert error">Completion was rejected: {assignment.latest_completion.review_reason}</div>}
+              </div>
+              <div className="timeline"><h3>Progress timeline</h3>{(assignment.progress_history || []).length === 0 ? <p>No field updates yet.</p> : assignment.progress_history.map((event) => <div className="timeline-event" key={event.id}><span /><div><strong>{progressLabel(event.progress_status)}</strong><small>{formatDate(event.created_at)}</small>{event.notes && <p>{event.notes}</p>}</div></div>)}</div>
+            </article>
+          );
+        })}
       </section>
     </main>
   );
@@ -206,11 +331,13 @@ function AnalysisPanel({ incident, analysisResult, isAnalyzing, onAnalyze, onSel
   );
 }
 
-function IncidentDetail({ incident, teams, analysisResult, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onSelectIncident }) {
+function IncidentDetail({ incident, teams, analysisResult, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onSelectIncident }) {
   const [teamId, setTeamId] = useState("");
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
   const availableTeams = teams.filter((team) => team.availability === "available");
-  const nextStatus = incident.status === "assigned" ? "in_progress" : incident.status === "in_progress" ? "resolved" : null;
+  const nextStatus = incident.status === "assigned" ? "in_progress" : null;
+  const latestCompletion = completionData?.reports?.[0];
 
   return (
     <section className="panel detail-panel" id={`incident-${incident.id}`} aria-labelledby="detail-title">
@@ -229,6 +356,8 @@ function IncidentDetail({ incident, teams, analysisResult, busyAction, actionErr
         <div><span>Location</span><p>{incident.location_text || "No written location"}</p>{hasCoordinates(incident) && <small>{incident.latitude}, {incident.longitude}</small>}</div>
         <div><span>Assigned team</span><p>{incident.assigned_team?.team_name || "Not assigned"}</p></div>
         <div><span>Last updated</span><p>{formatDate(incident.updated_at)}</p></div>
+        {incident.assignment && <div><span>Assignment notification</span><p>{incident.assignment.notification_acknowledged_at ? `Acknowledged ${formatDate(incident.assignment.notification_acknowledged_at)}` : incident.assignment.notification_read_at ? `Read ${formatDate(incident.assignment.notification_read_at)}` : "Unread by team"}</p></div>}
+        {incident.assignment && <div><span>Field progress</span><p>{progressLabel(incident.assignment.progress_status)}</p></div>}
       </div>
 
       <AnalysisPanel incident={incident} analysisResult={analysisResult} isAnalyzing={busyAction === "analyze"} onAnalyze={onAnalyze} onSelectIncident={onSelectIncident} />
@@ -255,6 +384,16 @@ function IncidentDetail({ incident, teams, analysisResult, busyAction, actionErr
         )}
         {incident.status === "resolved" && <div className="empty-state compact">This incident is resolved. Its assigned team has been released by the backend.</div>}
       </section>
+
+      <section className="detail-section" aria-labelledby="progress-title">
+        <div className="detail-section-heading"><div><p className="eyebrow">FIELD HISTORY</p><h3 id="progress-title">Progress timeline</h3></div></div>
+        {progressEvents.length === 0 ? <div className="empty-state compact">The assigned team has not submitted progress yet.</div> : <div className="timeline">{progressEvents.map((event) => <div className="timeline-event" key={event.id}><span /><div><strong>{progressLabel(event.progress_status)}</strong><small>{formatDate(event.created_at)} · {event.reported_by_name}</small>{event.notes && <p>{event.notes}</p>}</div></div>)}</div>}
+      </section>
+
+      <section className="detail-section" aria-labelledby="completion-title">
+        <div className="detail-section-heading"><div><p className="eyebrow">OPERATOR VERIFICATION</p><h3 id="completion-title">Completion report</h3></div></div>
+        {!latestCompletion ? <div className="empty-state compact">No completion report has been submitted.</div> : <div className="completion-review"><div className="detail-grid"><div><span>Submitted by</span><p>{latestCompletion.submitted_by_name}</p></div><div><span>People assisted</span><p>{latestCompletion.people_assisted ?? "Not stated"}</p></div><div><span>Review status</span><p>{latestCompletion.review_status}</p></div><div><span>Submitted</span><p>{formatDate(latestCompletion.submitted_at)}</p></div></div><h4>Completion summary</h4><p>{latestCompletion.completion_summary}</p>{latestCompletion.reason && <div className="alert error">Rejection reason: {latestCompletion.reason}</div>}{latestCompletion.review_status === "pending" && <div className="review-actions"><button className="primary-button" type="button" disabled={Boolean(busyAction)} onClick={() => onReviewCompletion("approve")}>Approve and resolve</button><label htmlFor="rejection-reason">Reason required to reject</label><textarea id="rejection-reason" rows="3" maxLength="2000" value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} /><button className="secondary-button" type="button" disabled={Boolean(busyAction) || rejectionReason.trim().length < 5} onClick={() => onReviewCompletion("reject", rejectionReason)}>Reject completion</button></div>}<p className="field-note">Evidence photos are not supported in this version; the completion summary is the reviewable evidence.</p></div>}
+      </section>
     </section>
   );
 }
@@ -266,6 +405,8 @@ function Dashboard({ session, onLogout }) {
   const [selectedId, setSelectedId] = useState("");
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [progressEvents, setProgressEvents] = useState([]);
+  const [completionData, setCompletionData] = useState({ reports: [], evidence_photos_supported: false });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -323,8 +464,14 @@ function Dashboard({ session, onLogout }) {
     setIsDetailLoading(true);
     setActionError("");
     try {
-      const incident = await getIncident(session.token, incidentId);
+      const [incident, nextProgressEvents, nextCompletionData] = await Promise.all([
+        getIncident(session.token, incidentId),
+        getIncidentProgress(session.token, incidentId),
+        getIncidentCompletion(session.token, incidentId),
+      ]);
       setSelectedIncident(incident);
+      setProgressEvents(nextProgressEvents);
+      setCompletionData(nextCompletionData);
       setAnalysisResult(null);
       if (incident.latest_analysis) {
         const analysis = await getIncidentAnalysis(session.token, incidentId);
@@ -381,6 +528,10 @@ function Dashboard({ session, onLogout }) {
     await runAction("status", () => updateIncidentStatus(session.token, selectedId, status), "Incident status updated.");
   }
 
+  async function handleReviewCompletion(decision, reason = "") {
+    await runAction(`completion-${decision}`, () => reviewCompletion(session.token, selectedId, decision, reason), decision === "approve" ? "Completion approved." : "Completion rejected.");
+  }
+
   const summary = [
     { label: "Total Incidents", value: stats?.total_incidents ?? 0, caption: "Stored reports" },
     { label: "Critical Cases", value: stats?.critical_recommendations ?? 0, caption: "AI recommendations" },
@@ -423,7 +574,7 @@ function Dashboard({ session, onLogout }) {
         </section>
 
         {isDetailLoading && <section className="panel detail-panel"><div className="empty-state">Loading incident details...</div></section>}
-        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onSelectIncident={selectIncident} />}
+        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onSelectIncident={selectIncident} />}
 
         <section id="teams" className="panel teams-panel"><div className="panel-heading"><div><h2>Rescue Teams</h2><p>Current availability from the backend.</p></div><span className="incident-count">{teams.length} teams</span></div>{teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => <article className="team-card" key={team.id}><span className={`team-state ${team.availability}`} /> <div><strong>{team.team_name}</strong><p>{team.availability}</p></div></article>)}</div>}</section>
         <footer className="footer"><span>RescueGrid AI — Rescue Coordination Platform</span><span>Live backend data · Human review required</span></footer>
@@ -449,5 +600,8 @@ export default function App() {
     setAuthMessage(message);
   }, []);
 
-  return session ? <Dashboard session={session} onLogout={handleLogout} /> : <LoginScreen message={authMessage} onLogin={handleLogin} />;
+  if (!session) return <LoginScreen message={authMessage} onLogin={handleLogin} />;
+  return session.user.role === "responder"
+    ? <ResponderDashboard session={session} onLogout={handleLogout} />
+    : <Dashboard session={session} onLogout={handleLogout} />;
 }

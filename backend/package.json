@@ -9,7 +9,10 @@
     "dev": "node --watch src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js",
+    "db:migrate": "node scripts/database.js migrate",
+    "db:seed": "node scripts/database.js seed",
+    "verify:response": "node scripts/verify-response-workflow.js"
   },
   "engines": {
     "node": ">=22"

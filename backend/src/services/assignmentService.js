@@ -28,6 +28,11 @@ async function assignTeam({ incidentId, teamId, assignedBy }, database = db) {
        VALUES ($1, $2, $3) RETURNING *`,
       [incidentId, teamId, assignedBy],
     );
+    const notificationResult = await client.query(
+      `INSERT INTO assignment_notifications (assignment_id, team_id)
+       VALUES ($1, $2) RETURNING *`,
+      [assignmentResult.rows[0].id, teamId],
+    );
     await client.query(
       `UPDATE incidents SET assigned_team_id = $1, status = 'assigned', updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
@@ -36,7 +41,11 @@ async function assignTeam({ incidentId, teamId, assignedBy }, database = db) {
     await client.query("UPDATE rescue_teams SET availability = 'busy' WHERE id = $1", [teamId]);
     await client.query('COMMIT');
 
-    return { assignment: assignmentResult.rows[0], team: { ...team, availability: 'busy' } };
+    return {
+      assignment: assignmentResult.rows[0],
+      notification: notificationResult.rows[0],
+      team: { ...team, availability: 'busy' },
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     if (error.code === '23505') throw new AppError(409, 'Incident already has an assignment');
@@ -53,7 +62,7 @@ const allowedTransitions = {
   resolved: [],
 };
 
-async function updateIncidentStatus({ incidentId, status }, database = db) {
+async function updateIncidentStatus({ incidentId, status, updatedBy = null }, database = db) {
   const client = await database.pool.connect();
   try {
     await client.query('BEGIN');
@@ -67,14 +76,33 @@ async function updateIncidentStatus({ incidentId, status }, database = db) {
       throw new AppError(409, `Cannot transition incident from ${incident.status} to ${status}`);
     }
 
+
     const updatedResult = await client.query(
-      `UPDATE incidents SET status = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 RETURNING *`,
-      [status, incidentId],
-    );
+  `UPDATE incidents
+   SET
+     status = $1::varchar,
+     updated_at = CURRENT_TIMESTAMP,
+     resolved_at = CASE
+       WHEN $1::varchar = 'resolved'
+       THEN CURRENT_TIMESTAMP
+       ELSE resolved_at
+     END,
+     resolved_by = CASE
+       WHEN $1::varchar = 'resolved'
+       THEN $3::uuid
+       ELSE resolved_by
+     END
+   WHERE id = $2::uuid
+   RETURNING *`,
+  [status, incidentId, updatedBy],
+);
     if (status === 'resolved' && incident.assigned_team_id) {
       await client.query(
-        "UPDATE rescue_teams SET availability = 'available' WHERE id = $1",
+        `UPDATE rescue_teams team SET availability = 'available'
+         WHERE team.id = $1 AND NOT EXISTS (
+           SELECT 1 FROM incidents active
+           WHERE active.assigned_team_id = team.id AND active.status <> 'resolved'
+         )`,
         [incident.assigned_team_id],
       );
     }

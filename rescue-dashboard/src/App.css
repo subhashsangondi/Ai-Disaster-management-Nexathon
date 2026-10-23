@@ -534,6 +534,142 @@ input:focus-visible {
   outline-offset: 2px;
 }
 
+.responder-page {
+  min-height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #f4f7fb;
+}
+
+.responder-header,
+.mission-heading,
+.notification-card,
+.responder-header-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.responder-header {
+  margin-bottom: 22px;
+}
+
+.responder-header h1,
+.mission-heading h2 {
+  margin: 4px 0;
+  color: #172033;
+}
+
+.responder-header p,
+.mission-heading p,
+.notification-card p,
+.notification-card small {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.responder-section,
+.mission-card {
+  margin-bottom: 20px;
+  border: 1px solid #e7ecf3;
+  border-radius: 14px;
+  background: #fff;
+  padding: 20px;
+}
+
+.notification-card {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.notification-card.unread {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 #2563eb;
+}
+
+.mission-card {
+  margin-top: 14px;
+  background: #fff;
+}
+
+.mission-description {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.mission-actions,
+.review-actions {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.mission-actions label,
+.review-actions label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mission-actions textarea,
+.mission-actions input,
+.review-actions textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px;
+  color: #172033;
+  font: inherit;
+}
+
+.timeline {
+  margin-top: 18px;
+}
+
+.timeline h3 {
+  color: #172033;
+  font-size: 14px;
+}
+
+.timeline-event {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.timeline-event > span {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+
+.timeline-event strong,
+.timeline-event small {
+  display: block;
+  text-transform: capitalize;
+}
+
+.timeline-event small,
+.timeline-event p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.completion-review > p {
+  color: #475569;
+  line-height: 1.6;
+}
+
 .incident-description {
   display: block;
   margin: 7px 0;
@@ -996,6 +1132,16 @@ input:focus-visible {
 
   .detail-section-heading {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .responder-page {
+    padding: 15px;
+  }
+
+  .responder-header,
+  .mission-heading,
+  .notification-card {
     flex-direction: column;
   }
 }
