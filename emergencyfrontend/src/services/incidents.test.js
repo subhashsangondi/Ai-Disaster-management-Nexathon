@@ -3,7 +3,12 @@ import { submitIncident } from "./incidents.js";
 
 const payload = {
   emergency_type: "Flood",
-  description: "Water is entering a residential building.",
+  description: null,
+  reporter_type: "witness",
+  people_affected: 3,
+  people_injured: 1,
+  victim_phone: null,
+  volunteer_phone: "+91 98765 43210",
   latitude: null,
   longitude: null,
   location_text: "Oak Street",
@@ -25,6 +30,7 @@ describe("submitIncident", () => {
         data: {
           incident_id: "30000000-0000-4000-8000-000000000001",
           status: "pending",
+          created_at: "2026-10-24T00:30:00.000Z",
           analysis_status: "pending",
           notice: "Stored immediately",
         },
@@ -36,6 +42,7 @@ describe("submitIncident", () => {
       id: "30000000-0000-4000-8000-000000000001",
       message: "Emergency report received by RescueGrid AI",
       status: "pending",
+      reportedAt: "2026-10-24T00:30:00.000Z",
       analysisStatus: "pending",
       notice: "Stored immediately",
     });

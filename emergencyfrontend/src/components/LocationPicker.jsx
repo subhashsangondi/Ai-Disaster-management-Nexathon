@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ExternalLink, LoaderCircle, MapPin } from "lucide-react";
+import EmergencyLocationMap from "./EmergencyLocationMap.jsx";
 import { getMapLinks } from "../utils/maps.js";
 
 function geolocationErrorMessage(error) {
@@ -18,6 +19,7 @@ function geolocationErrorMessage(error) {
 export default function LocationPicker({ values, onChange, error }) {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [coordinateSource, setCoordinateSource] = useState("");
 
   function getCurrentLocation() {
     setLocationError("");
@@ -31,6 +33,7 @@ export default function LocationPicker({ values, onChange, error }) {
       ({ coords }) => {
         onChange("latitude", coords.latitude);
         onChange("longitude", coords.longitude);
+        setCoordinateSource("gps");
         setLocationError("");
         setIsLocating(false);
       },
@@ -38,17 +41,24 @@ export default function LocationPicker({ values, onChange, error }) {
         setLocationError(geolocationErrorMessage(geoError));
         setIsLocating(false);
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   }
 
   const hasCoordinates = values.latitude !== null && values.longitude !== null;
   const mapLinks = getMapLinks(values);
 
+  function selectMapLocation(latitude, longitude) {
+    onChange("latitude", latitude);
+    onChange("longitude", longitude);
+    setCoordinateSource("map");
+    setLocationError("");
+  }
+
   return (
     <fieldset className="min-w-0">
       <legend className="mb-1.5 block text-sm font-medium text-slate-800">Location <span className="text-red-600">*</span></legend>
-      <p className="mb-3 text-xs leading-5 text-slate-500">Use GPS or type a nearby landmark. You can check the location on a map before sending.</p>
+      <p className="mb-3 text-xs leading-5 text-slate-500">Use GPS, or zoom and tap the satellite map to place the incident pin. You can also enter a landmark.</p>
       <button type="button" onClick={getCurrentLocation} disabled={isLocating} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#102238] disabled:cursor-wait disabled:opacity-70">
         {isLocating ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : <MapPin aria-hidden="true" size={16} />}
         {isLocating ? "Getting your location..." : hasCoordinates ? "Refresh current location" : "Use My Current Location"}
@@ -56,13 +66,30 @@ export default function LocationPicker({ values, onChange, error }) {
 
       {hasCoordinates && (
         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-900" role="status">
-          <p className="font-medium">Browser-provided coordinates</p>
-          <p className="mt-1 break-all font-mono text-xs">Latitude: {values.latitude}, Longitude: {values.longitude}</p>
-          <p className="mt-1 text-xs text-emerald-800">Accuracy depends on your device and browser.</p>
+          <p className="font-medium">{coordinateSource === "gps" ? "Current device location" : "Incident pin selected on map"}</p>
+          <p className="mt-1 break-all font-mono text-xs">Latitude: {values.latitude.toFixed(6)}, Longitude: {values.longitude.toFixed(6)}</p>
+          <p className="mt-1 text-xs text-emerald-800">
+            {coordinateSource === "gps"
+              ? "GPS accuracy depends on your device and browser."
+              : "Pin accuracy depends on map zoom and where you tapped. Zoom in and tap again to adjust."}
+          </p>
         </div>
       )}
 
       {(locationError || error) && <p className="field-error" role={locationError ? "alert" : undefined}>{locationError || error}</p>}
+
+      <div className="mt-4">
+        <EmergencyLocationMap
+          latitude={values.latitude}
+          longitude={values.longitude}
+          onSelectLocation={selectMapLocation}
+        />
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          {hasCoordinates
+            ? "Tap another point on the map to move the incident pin."
+            : "Zoom in and tap the map to set the incident pin. The initial map view is not your location."}
+        </p>
+      </div>
 
       <div className="mt-4">
         <label htmlFor="location_text" className="mb-1.5 block text-sm font-medium text-slate-800">Manual location</label>

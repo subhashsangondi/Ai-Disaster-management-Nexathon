@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Clock3, ExternalLink, LoaderCircle, MapPin, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, ExternalLink, LoaderCircle, MapPin, Phone, Send, Users } from "lucide-react";
 import { submitIncident } from "../services/incidents.js";
 import { getMapLinks } from "../utils/maps.js";
 import { MAX_DESCRIPTION_LENGTH, validateIncident } from "../utils/validation.js";
@@ -8,6 +8,11 @@ import LocationPicker from "./LocationPicker.jsx";
 const initialValues = {
   category: "",
   description: "",
+  reporter_type: "",
+  people_affected: null,
+  people_injured: null,
+  victim_phone: "",
+  volunteer_phone: "",
   latitude: null,
   longitude: null,
   location_text: "",
@@ -23,6 +28,30 @@ const categories = [
   "Rescue Required",
   "Other",
 ];
+
+const reporterTypes = ["victim", "witness", "volunteer", "other"];
+
+function CountSelect({ id, label, value, onChange, error, max = 10 }) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-800">{label}</label>
+      <select
+        id={id}
+        value={value ?? ""}
+        onChange={(event) => onChange(id, event.target.value === "" ? null : Number(event.target.value))}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : `${id}-hint`}
+        className="form-control"
+      >
+        <option value="">Not sure</option>
+        {Array.from({ length: max + 1 }, (_, count) => (
+          <option key={count} value={count}>{count === 10 ? "10 or more" : count}</option>
+        ))}
+      </select>
+      {error ? <p id={`${id}-error`} className="field-error">{error}</p> : <p id={`${id}-hint`} className="mt-1.5 text-xs text-slate-500">Optional. Choose “Not sure” if unknown.</p>}
+    </div>
+  );
+}
 
 function formatReportedAt(value) {
   const date = new Date(value);
@@ -43,8 +72,19 @@ export default function EmergencyReportForm({ onProgressChange }) {
   const submissionLock = useRef(false);
 
   function updateValue(name, value) {
-    setValues((current) => ({ ...current, [name]: value }));
-    setErrors((current) => ({ ...current, [name]: undefined, location: undefined }));
+    setValues((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === "people_affected" && value !== null && current.people_injured > value
+        ? { people_injured: value }
+        : {}),
+    }));
+    setErrors((current) => ({
+      ...current,
+      [name]: undefined,
+      ...(name === "victim_phone" || name === "volunteer_phone" ? { contact_phone: undefined } : {}),
+      location: undefined,
+    }));
     setRequestError("");
   }
 
@@ -66,7 +106,12 @@ export default function EmergencyReportForm({ onProgressChange }) {
       values.longitude <= 180;
     const payload = {
       emergency_type: values.category.trim(),
-      description: values.description.trim(),
+      description: values.description.trim() || null,
+      reporter_type: values.reporter_type,
+      people_affected: values.people_affected,
+      people_injured: values.people_injured,
+      victim_phone: values.victim_phone.trim() || null,
+      volunteer_phone: values.volunteer_phone.trim() || null,
       latitude: coordinatesAreValid ? values.latitude : null,
       longitude: coordinatesAreValid ? values.longitude : null,
       location_text: values.location_text.trim() || null,
@@ -80,7 +125,7 @@ export default function EmergencyReportForm({ onProgressChange }) {
       const response = await submitIncident(payload);
       setDeviceReportedAt(submittedAt);
       setResult(response);
-      onProgressChange?.({ ...response, reportedAt: submittedAt });
+      onProgressChange?.({ ...response, reportedAt: response.reportedAt || submittedAt });
     } catch (error) {
       onProgressChange?.({ phase: "error" });
       setRequestError(error instanceof Error ? error.message : "The report could not be submitted. Please try again.");
@@ -102,6 +147,8 @@ export default function EmergencyReportForm({ onProgressChange }) {
   if (result) {
     const status = result.status || "pending";
     const mapLinks = getMapLinks(values);
+    const peopleAffected = values.people_affected === 10 ? "10+" : values.people_affected ?? "Unknown";
+    const peopleInjured = values.people_injured === 10 ? "10+" : values.people_injured ?? "Unknown";
 
     return (
       <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm sm:p-8" aria-live="polite" aria-labelledby="success-title">
@@ -118,6 +165,11 @@ export default function EmergencyReportForm({ onProgressChange }) {
           </span>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <span className="inline-flex items-center gap-2"><Users aria-hidden="true" size={16} /> {peopleAffected} affected · {peopleInjured} injured</span>
+          <span>Reported as: {values.reporter_type}</span>
+        </div>
+
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Incident ID</p>
@@ -125,8 +177,8 @@ export default function EmergencyReportForm({ onProgressChange }) {
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Clock3 aria-hidden="true" size={14} /> Reported at</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">{formatReportedAt(deviceReportedAt)}</p>
-            <p className="mt-1 text-xs text-slate-500">Your device time</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">{formatReportedAt(result.reportedAt || deviceReportedAt)}</p>
+            {!result.reportedAt && <p className="mt-1 text-xs text-slate-500">Your device time</p>}
           </div>
         </div>
 
@@ -169,14 +221,64 @@ export default function EmergencyReportForm({ onProgressChange }) {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <label htmlFor="description" className="block text-sm font-medium text-slate-800">Emergency details <span className="text-red-600">*</span></label>
+            <label htmlFor="description" className="block text-sm font-medium text-slate-800">Emergency details <span className="font-normal text-slate-500">(optional)</span></label>
             <span className="text-xs text-slate-500">{values.description.length}/{MAX_DESCRIPTION_LENGTH}</span>
           </div>
-          <textarea id="description" rows="4" maxLength={MAX_DESCRIPTION_LENGTH} value={values.description} onChange={(event) => updateValue("description", event.target.value)} placeholder="Describe what happened, immediate dangers, and who needs help." aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? "description-error" : "description-hint"} className="form-control resize-y" />
-          {errors.description ? <p id="description-error" className="field-error">{errors.description}</p> : <p id="description-hint" className="mt-1.5 text-xs text-slate-500">At least 10 characters. Include only details that help responders.</p>}
+          <textarea id="description" rows="2" maxLength={MAX_DESCRIPTION_LENGTH} value={values.description} onChange={(event) => updateValue("description", event.target.value)} placeholder="Optional: add any urgent detail responders should know." aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? "description-error" : "description-hint"} className="form-control resize-y" />
+          {errors.description ? <p id="description-error" className="field-error">{errors.description}</p> : <p id="description-hint" className="mt-1.5 text-xs text-slate-500">Optional. If entered, use at least 10 characters.</p>}
         </div>
 
+        <div>
+          <label htmlFor="reporter_type" className="mb-1.5 block text-sm font-medium text-slate-800">I am reporting as <span className="text-red-600">*</span></label>
+          <select id="reporter_type" value={values.reporter_type} onChange={(event) => updateValue("reporter_type", event.target.value)} aria-invalid={Boolean(errors.reporter_type)} aria-describedby={errors.reporter_type ? "reporter-type-error" : "reporter-type-hint"} className="form-control">
+            <option value="">Choose your role</option>
+            {reporterTypes.map((type) => <option key={type} value={type}>{type[0].toUpperCase() + type.slice(1)}</option>)}
+          </select>
+          {errors.reporter_type ? <p id="reporter-type-error" className="field-error">{errors.reporter_type}</p> : <p id="reporter-type-hint" className="mt-1.5 text-xs text-slate-500">Victim, witness, volunteer, or other.</p>}
+        </div>
+
+        <fieldset className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-800">People needing help</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CountSelect id="people_affected" label="People affected" value={values.people_affected} onChange={updateValue} />
+            <CountSelect id="people_injured" label="People injured" value={values.people_injured} onChange={updateValue} error={errors.people_injured} max={values.people_affected ?? 10} />
+          </div>
+        </fieldset>
+
         <LocationPicker values={values} onChange={updateValue} error={errors.location} />
+
+        <fieldset className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-800">Contact number <span className="text-red-600">*</span></legend>
+          <p className="mb-3 text-xs leading-5 text-slate-600">Provide at least one number so responders can reach the victim or volunteer. The other number can be left blank.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[
+              ["victim_phone", "Victim's phone number"],
+              ["volunteer_phone", "Volunteer's phone number"],
+            ].map(([id, label]) => (
+              <div key={id}>
+                <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-800">{label}</label>
+                <div className="relative">
+                  <Phone aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+                  <input
+                    id={id}
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    maxLength={20}
+                    value={values[id]}
+                    onChange={(event) => updateValue(id, event.target.value)}
+                    placeholder="+91 98765 43210"
+                    aria-invalid={Boolean(errors[id] || errors.contact_phone)}
+                    aria-describedby={errors[id] ? `${id}-error` : errors.contact_phone ? "contact-phone-error" : undefined}
+                    className="form-control form-control--with-icon"
+                  />
+                </div>
+                {errors[id] && <p id={`${id}-error`} className="field-error">{errors[id]}</p>}
+              </div>
+            ))}
+          </div>
+          {errors.contact_phone && <p id="contact-phone-error" className="field-error" role="alert">{errors.contact_phone}</p>}
+        </fieldset>
 
         {requestError && (
           <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

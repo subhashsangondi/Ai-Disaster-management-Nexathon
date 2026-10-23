@@ -4,6 +4,11 @@ import { validateIncident } from "./validation.js";
 const validIncident = {
   category: "Flood",
   description: "Water is entering the ground floor.",
+  reporter_type: "witness",
+  people_affected: null,
+  people_injured: null,
+  victim_phone: null,
+  volunteer_phone: "+91 98765 43210",
   latitude: null,
   longitude: null,
   location_text: "Oak Street near the library",
@@ -14,12 +19,30 @@ describe("validateIncident", () => {
     expect(validateIncident(validIncident)).toEqual({});
   });
 
-  it("requires emergency type, a 10-character description, and location", () => {
-    expect(validateIncident({ ...validIncident, category: " ", description: "short", location_text: "" })).toEqual({
-      category: "Choose an emergency category.",
-      description: "Describe the emergency in at least 10 characters.",
+  it("accepts a blank description while requiring role, contact, and location", () => {
+    expect(validateIncident({
+      ...validIncident,
+      description: "",
+      reporter_type: "",
+      victim_phone: "",
+      volunteer_phone: "",
+      location_text: "",
+    })).toEqual({
+      reporter_type: "Choose who is reporting.",
+      contact_phone: "Enter either the victim's or volunteer's phone number.",
       location: "Use your current location or enter a location manually.",
     });
+  });
+
+  it("validates non-empty optional descriptions and victim counts", () => {
+    const errors = validateIncident({
+      ...validIncident,
+      description: "short",
+      people_affected: 2,
+      people_injured: 3,
+    });
+    expect(errors.description).toContain("at least 10 characters");
+    expect(errors.people_injured).toContain("cannot exceed");
   });
 
   it("rejects an overlong description and invalid GPS without a fallback", () => {

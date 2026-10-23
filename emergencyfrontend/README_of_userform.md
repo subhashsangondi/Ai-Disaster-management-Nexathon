@@ -32,14 +32,19 @@ The frontend sends an unauthenticated JSON request to `POST ${VITE_API_BASE_URL}
 ```json
 {
   "emergency_type": "Flood",
-  "description": "Water is entering a residential building.",
+  "description": null,
+  "reporter_type": "witness",
+  "people_affected": 3,
+  "people_injured": 1,
+  "victim_phone": null,
+  "volunteer_phone": "+91 98765 43210",
   "latitude": null,
   "longitude": null,
   "location_text": "Oak Street near the library"
 }
 ```
 
-`emergency_type` must contain 2–100 characters and `description` 10–5000 characters. A complete, valid coordinate pair or a non-empty manual location is required. Manual location is limited to 500 characters.
+`emergency_type` must contain 2–100 characters. `description` is optional; if entered, it must be 10–5000 characters. `reporter_type` is required (`victim`, `witness`, `volunteer`, or `other`). People counts are optional, and `10` represents ten or more. At least one valid 7–15 digit phone number is required in either `victim_phone` or `volunteer_phone`. A complete, valid coordinate pair or a non-empty manual location is required. Manual location is limited to 500 characters.
 
 The API responds with the standard RescueGrid envelope:
 
@@ -50,6 +55,7 @@ The API responds with the standard RescueGrid envelope:
   "data": {
     "incident_id": "30000000-0000-4000-8000-000000000001",
     "status": "pending",
+    "created_at": "2026-10-24T00:00:00.000Z",
     "analysis_status": "pending",
     "notice": "This report is stored in RescueGrid AI and is not confirmation of delivery to official emergency services."
   }
@@ -62,9 +68,13 @@ The success screen appears as soon as the backend has stored the incident. Gemin
 
 Geolocation is requested only when the user presses **Use My Current Location**. Permission denial, unavailability, timeouts, and unsupported browsers leave the manual-location field available. Localhost is treated as a secure context by modern browsers.
 
-## Unsupported public features
+## Incident map
 
-The current backend SOS schema does not accept photos, phone numbers, reporter roles, or victim counts, so the public form does not collect or fabricate persistence for them. The backend also has no victim-accessible incident-status lookup endpoint; authenticated operators can view and manage incidents through `/api/incidents`.
+The location picker uses Leaflet and the same Esri satellite imagery tile layer as `rescue-dashboard`. When a location is selected, the map centers at zoom level 13, matching the dashboard's single-incident view. Press **Use My Current Location** to center the map and place the marker at the coordinates returned by the browser. You can also zoom and tap the map to set or move the incident marker; the selected latitude and longitude are then submitted in the SOS request.
+
+The initial map view is only an unpinned India overview, not a reported location. A typed address is not geocoded automatically, so use GPS or select the precise point on the map when coordinates are needed. GPS accuracy depends on the device and browser; manual pin accuracy depends on map zoom and where you tap. Use the map attribution and imagery as supplied by Esri and its imagery providers.
+
+The right-side progress indicator reflects the status returned by the SOS response (`pending`, `assigned`, `in_progress`, or `resolved`) and does not claim team assignment without confirmation from the backend. The public API does not provide ongoing status lookup; the shown status is the latest status returned when the report was submitted.
 
 ## Checks
 

@@ -15,13 +15,26 @@ function formatReportedAt(value) {
   }).format(date);
 }
 
+const responseStages = [
+  { label: "Report submitted", statuses: ["pending"] },
+  { label: "Rescue team assigned", statuses: ["assigned"] },
+  { label: "Team responding", statuses: ["in_progress"] },
+  { label: "Resolved", statuses: ["resolved"] },
+];
+
+function getResponseStage(status) {
+  const normalized = normalizeStatus(status);
+  const stage = responseStages.findIndex((step) => step.statuses.includes(normalized));
+  return stage < 0 ? 0 : stage;
+}
+
 export default function App() {
   const [incidentProgress, setIncidentProgress] = useState(null);
   const isConfirmed = incidentProgress?.id !== undefined;
   const reportedAt = incidentProgress?.reportedAt || "";
-  const confirmedStatusLabel = isConfirmed
-    ? normalizeStatus(incidentProgress.status || "pending").replaceAll("_", " ")
-    : "";
+  const status = isConfirmed ? incidentProgress.status || "pending" : "";
+  const statusStage = isConfirmed ? getResponseStage(status) : -1;
+  const confirmedStatusLabel = isConfirmed ? responseStages[statusStage].label : "";
 
   return (
     <div className="min-h-screen bg-[#f4f6f8] text-slate-900">
@@ -86,14 +99,28 @@ export default function App() {
                     <p className="text-xs text-slate-400">Incident ID</p>
                     <p className="mt-1 break-all font-mono text-sm font-semibold">{incidentProgress.id}</p>
                     {reportedAt && (
-                      <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-300">
+                      <p className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-slate-300">
                         <Clock3 aria-hidden="true" size={13} />
-                        {formatReportedAt(reportedAt)}
+                        <span>Reported at</span>
+                        <time className="sm:ml-auto" dateTime={reportedAt}>{formatReportedAt(reportedAt)}</time>
                       </p>
                     )}
                   </div>
+                  <ol className="mt-5 space-y-4" aria-label="Emergency response progress">
+                    {responseStages.map((step, index) => {
+                      const reached = index <= statusStage;
+                      return (
+                        <li key={step.label} className="flex items-center gap-3">
+                          <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-xs ${reached ? "border-emerald-300 bg-emerald-400 text-[#102238]" : "border-white/20 text-slate-500"}`}>
+                            {reached ? <CheckCircle2 aria-hidden="true" size={15} /> : index + 1}
+                          </span>
+                          <span className={`text-sm ${index === statusStage ? "font-semibold text-white" : reached ? "text-emerald-200" : "text-slate-400"}`}>{step.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
                   <p className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-                    The public portal confirms receipt only. Live status tracking is not available through the public API.
+                    This is the latest status returned with the report. Team assignment and later updates appear when the response system updates the incident.
                   </p>
                 </>
               ) : (
@@ -107,7 +134,7 @@ export default function App() {
                   </p>
                   <div className="mt-5 flex items-start gap-2 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
                     <ArrowUpRight aria-hidden="true" className="mt-0.5 shrink-0 text-orange-300" size={15} />
-                    Rescue-team assignment and later status updates are available only to authenticated operators.
+                    Rescue-team assignment is shown only after the server confirms it.
                   </div>
                 </>
               )}

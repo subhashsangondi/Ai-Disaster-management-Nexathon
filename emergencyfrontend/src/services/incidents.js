@@ -68,6 +68,7 @@ export async function submitIncident(payload) {
     id: typeof incidentId === "string" ? incidentId.trim() : incidentId,
     message: typeof body.message === "string" ? body.message.trim() : "",
     status: typeof body.data.status === "string" ? body.data.status.trim() : "",
+    reportedAt: typeof body.data.created_at === "string" ? body.data.created_at : "",
     analysisStatus: typeof body.data.analysis_status === "string" ? body.data.analysis_status.trim() : "",
     notice: typeof body.data.notice === "string" ? body.data.notice.trim() : "",
   };
