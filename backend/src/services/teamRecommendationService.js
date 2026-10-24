@@ -38,7 +38,7 @@ const INCIDENT_CAPABILITY_RULES = Object.freeze([
     capabilities: ['confined_space_rescue', 'structural_collapse_rescue', 'urban_search_and_rescue', 'first_aid'],
   },
   {
-    terms: ['road accident', 'vehicle accident', 'traffic accident'],
+    terms: ['road accident', 'vehicle accident', 'traffic accident', 'accident'],
     category: 'medical_response',
     capabilities: ['first_aid', 'trauma_care', 'patient_stabilization', 'ambulance_support', 'general_rescue'],
   },

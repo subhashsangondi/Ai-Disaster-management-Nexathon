@@ -37,6 +37,7 @@ describe("submitIncident", () => {
       id: "30000000-0000-4000-8000-000000000001",
       message: "Emergency report received by RescueGrid AI",
       status: "pending",
+      submissionMode: "detailed",
       analysisStatus: "pending",
       notice: "Stored immediately",
       trackingToken: "private-token-value",

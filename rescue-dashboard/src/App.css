@@ -242,6 +242,12 @@ h1 {
   margin: 5px 0 0;
 }
 
+.incident-popup .incident-popup-reference {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .map-legend {
   display: flex;
   gap: 18px;
@@ -1588,4 +1594,47 @@ textarea:focus-visible {
   .duplicate-actions {
     flex-direction: column;
   }
+}
+
+.quick-sos-badge,
+.triage-badge {
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .25px;
+  text-transform: uppercase;
+}
+
+.quick-sos-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.triage-badge {
+  background: #7f1d1d;
+  color: #ffffff;
+}
+
+.detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.incident-popup .quick-sos-badge,
+.incident-popup .triage-badge {
+  display: inline-block;
+  margin: 4px 4px 0 0;
+}
+
+.triage-form {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.triage-banner {
+  margin-bottom: 12px;
 }

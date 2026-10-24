@@ -74,6 +74,17 @@ psql "postgresql://postgres:postgres@localhost:5432/rescuegrid" -f db/schema.sql
 psql "postgresql://postgres:postgres@localhost:5432/rescuegrid" -f db/seed.sql
 ```
 
+For an existing database created before a feature was added, apply the additive migrations instead
+(they are rerunnable and never drop data):
+
+```bash
+npm run db:migrate
+```
+
+`db/migrations/005_quick_sos_contact_number.sql` adds Quick SOS support (`submission_mode`, triage and
+severity fields, location accuracy and capture time) and the optional `contact_number`. It relaxes the
+description requirement only for `quick_sos` rows; detailed reports still need at least 10 characters.
+
 The scripts are rerunnable for the hackathon workflow. The seed contains simulated incidents and fictional teams only.
 
 Local-only credentials:

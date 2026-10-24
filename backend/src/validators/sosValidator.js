@@ -12,13 +12,20 @@ const optionalCoordinate = z.union([
   }),
 ]).nullish();
 
-const sosSchema = z.object({
-  emergency_type: z.string().trim().min(2).max(100),
-  description: z.string().trim().min(10).max(5000),
-  latitude: optionalCoordinate,
-  longitude: optionalCoordinate,
-  location_text: z.string().trim().max(500).nullish(),
-}).strict().superRefine((data, ctx) => {
+// Accepts common Indian and international formats ("+91 98765 43210", "(022) 2345-6789") and
+// stores digits with an optional leading "+". Messages never echo the submitted number.
+const PHONE_SEPARATORS = /[\s().-]/g;
+const contactNumber = z.string().trim().max(32).transform((value, ctx) => {
+  if (!value) return null;
+  const normalized = value.replace(PHONE_SEPARATORS, '');
+  if (!/^\+?[0-9]{6,15}$/.test(normalized)) {
+    ctx.addIssue({ code: 'custom', message: 'Enter a valid phone number with 6 to 15 digits and an optional leading +' });
+    return z.NEVER;
+  }
+  return normalized;
+}).nullish();
+
+function refineLocation(data, ctx) {
   const hasLatitude = data.latitude !== null && data.latitude !== undefined;
   const hasLongitude = data.longitude !== null && data.longitude !== undefined;
   const hasLocationText = Boolean(data.location_text?.trim());
@@ -43,6 +50,51 @@ const sosSchema = z.object({
       message: 'Provide valid coordinates or a nonempty location description',
     });
   }
-});
+}
 
-module.exports = { sosSchema };
+const detailedSosSchema = z.object({
+  submission_mode: z.literal('detailed').optional(),
+  emergency_type: z.string().trim().min(2).max(100),
+  description: z.string().trim().min(10).max(5000),
+  latitude: optionalCoordinate,
+  longitude: optionalCoordinate,
+  location_text: z.string().trim().max(500).nullish(),
+  contact_number: contactNumber,
+}).strict().superRefine(refineLocation);
+
+// Quick SOS carries no description or emergency type: those are left for operator triage.
+const quickSosSchema = z.object({
+  submission_mode: z.literal('quick_sos'),
+  latitude: optionalCoordinate,
+  longitude: optionalCoordinate,
+  location_text: z.string().trim().max(500).nullish(),
+  location_accuracy_meters: z.number().finite().min(0).max(100000).nullish(),
+  location_captured_at: z.iso.datetime({ offset: true }).nullish(),
+  contact_number: contactNumber,
+}).strict().superRefine(refineLocation);
+
+// Dispatches on submission_mode so detailed reports keep their original validation errors.
+const sosSchema = {
+  safeParse(body) {
+    const schema = body?.submission_mode === 'quick_sos' ? quickSosSchema : detailedSosSchema;
+    return schema.safeParse(body);
+  },
+};
+
+const VICTIM_EMERGENCY_TYPES = ['Fire', 'Flood', 'Medical', 'Accident', 'Trapped', 'Other'];
+
+const victimDetailsSchema = z.object({
+  emergency_type: z.enum(VICTIM_EMERGENCY_TYPES).optional(),
+  contact_number: contactNumber,
+}).strict().refine(
+  (data) => data.emergency_type !== undefined || (data.contact_number !== undefined && data.contact_number !== null),
+  { message: 'Provide an emergency type or a contact number' },
+);
+
+module.exports = {
+  sosSchema,
+  detailedSosSchema,
+  quickSosSchema,
+  victimDetailsSchema,
+  VICTIM_EMERGENCY_TYPES,
+};

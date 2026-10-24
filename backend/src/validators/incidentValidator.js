@@ -15,4 +15,15 @@ const statusSchema = z.object({
   status: z.enum(['pending', 'assigned', 'in_progress', 'resolved']),
 }).strict();
 
-module.exports = { uuidParamsSchema, incidentFiltersSchema, assignmentSchema, statusSchema };
+const triageSchema = z.object({
+  emergency_type: z.string().trim().min(2).max(100),
+  severity: z.enum(['critical', 'high', 'medium', 'low', 'unknown']),
+}).strict();
+
+module.exports = {
+  uuidParamsSchema,
+  incidentFiltersSchema,
+  assignmentSchema,
+  statusSchema,
+  triageSchema,
+};

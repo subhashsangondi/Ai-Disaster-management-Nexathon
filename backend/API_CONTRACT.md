@@ -99,6 +99,32 @@ Authentication is optional. If a valid public JWT is supplied, its user ID is st
 
 `description` must contain at least 10 characters. Supply both valid coordinates or a nonempty `location_text`. Coordinates may be JSON numbers or numeric strings.
 
+`contact_number` is optional on every report. Spaces, hyphens, dots, and parentheses are removed; the
+result must be 6–15 digits with an optional leading `+` (for example `+91 98765 43210` is stored as
+`+919876543210`). Empty strings are stored as `null`. Validation errors never echo the submitted number.
+Contact numbers are returned only by the operator/admin incident endpoints, never by public tracking,
+and are never sent to Gemini or Groq.
+
+#### Quick SOS (location-only)
+
+```json
+{
+  "submission_mode": "quick_sos",
+  "latitude": 12.871,
+  "longitude": 74.842,
+  "location_accuracy_meters": 15,
+  "location_captured_at": "2026-10-24T09:00:00.000Z"
+}
+```
+
+A Quick SOS needs no `emergency_type` or `description` (they are rejected if sent). It requires valid
+coordinates or, as a manual fallback, a nonempty `location_text`. `location_accuracy_meters` (0–100000),
+`location_captured_at` (ISO 8601), and `contact_number` are optional. The incident is stored with
+`emergency_type: "Unknown"`, no description, no severity, and `triage_status: "needs_immediate_triage"`.
+Severity is never inferred from location, no AI analysis runs, and no team is assigned automatically.
+The response includes `submission_mode: "quick_sos"`, `analysis_status: "not_applicable"`, and
+`triage_status`. Detailed reports return `submission_mode: "detailed"` and `triage_status: "not_required"`.
+
 Returns `201` only after persistence:
 
 ```json
@@ -116,6 +142,29 @@ Returns `201` only after persistence:
 
 Gemini is not called during SOS submission.
 
+## Public tracking
+
+### `GET /public/incidents/track` — public, rate limited
+
+Send the private token in the `X-Incident-Tracking-Token` header. Returns only `incident_reference`,
+`emergency_type`, `submission_mode`, `status`, `submitted_at`, `last_updated_at`, and
+`progress_messages`. Contact numbers, coordinates, descriptions, and operator fields are never returned.
+
+### `PATCH /public/incidents/track/details` — public, rate limited, tracking token required
+
+Lets the person holding a Quick SOS tracking token add optional details after the SOS is saved:
+
+```json
+{ "emergency_type": "Fire", "contact_number": "+91 98765 43210" }
+```
+
+`emergency_type` must be one of `Fire`, `Flood`, `Medical`, `Accident`, `Trapped`, or `Other`; at least
+one field is required and no other fields are accepted. The victim's type is applied only while the
+incident still awaits operator triage, so it never overrides an operator assessment. Detailed reports and
+resolved incidents return `404`. The response contains `incident_reference`, `emergency_type`,
+`contact_number_provided` (a boolean, not the number), and `awaiting_operator_triage`. The audit log
+records only which fields were supplied.
+
 ## Incidents — operator/admin
 
 ### `GET /incidents`
@@ -129,6 +178,8 @@ Optional query parameters:
 - `limit`: `1`–`100`; default `20`
 
 Returns `{ incidents, pagination }`. Each incident has `latest_analysis`, or `null` before analysis.
+Incidents also include `submission_mode`, `triage_status`, `assessed_severity`, `triaged_at`,
+`location_accuracy_meters`, `location_captured_at`, and the optional `contact_number`.
 
 ### `GET /incidents/:id`
 
@@ -164,7 +215,8 @@ Calls the configured Gemini model, validates structured output, stores it, runs 
 Gemini is attempted first. Groq is attempted once when Gemini is unavailable, rate limited, times out,
 or returns invalid structured output. `provider_metadata` contains only safe provider/model information.
 Returns `503` with a manual-review message if neither provider returns valid structured analysis. Existing
-SOS data is unaffected.
+SOS data is unaffected. A location-only Quick SOS with no description returns `422`
+(`ANALYSIS_REQUIRES_DESCRIPTION`) without calling any provider; use operator triage instead.
 
 ### `GET /incidents/:id/analysis`
 
@@ -195,6 +247,16 @@ The incident and team are locked in a transaction. Only a `pending`, unassigned 
 ```
 
 Allowed transitions are `assigned → in_progress → resolved`. Assignment is performed only through the assignment endpoint. Resolving an incident releases its team to `available`; invalid transitions return `409`.
+
+### `PATCH /incidents/:id/triage`
+
+```json
+{ "emergency_type": "Fire", "severity": "high" }
+```
+
+Records an operator assessment: sets the emergency type, `assessed_severity` (`critical`, `high`,
+`medium`, `low`, or `unknown`), `triage_status: "assessed"`, `triaged_by`, and `triaged_at`, and writes an
+`incident_triaged` audit event. It does not assign a team or change the incident status.
 
 ## Rescue teams — operator/admin
 
@@ -241,6 +303,7 @@ Returns live database counts:
     "in_progress": 7,
     "resolved": 3,
     "critical_recommendations": 4,
+    "needs_triage": 2,
     "available_teams": 6
   }
 }

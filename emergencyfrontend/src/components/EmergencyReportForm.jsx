@@ -1,9 +1,11 @@
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Clock3, ExternalLink, LoaderCircle, MapPin, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, ExternalLink, LoaderCircle, MapPin, Send } from "lucide-react";
 import { submitIncident } from "../services/incidents.js";
 import { getMapLinks } from "../utils/maps.js";
 import { MAX_DESCRIPTION_LENGTH, validateIncident } from "../utils/validation.js";
+import { normalizeContactNumber } from "../utils/contactNumber.js";
 import LocationPicker from "./LocationPicker.jsx";
+import SosStatusCard from "./SosStatusCard.jsx";
 
 const initialValues = {
   category: "",
@@ -11,6 +13,7 @@ const initialValues = {
   latitude: null,
   longitude: null,
   location_text: "",
+  contact_number: "",
 };
 
 const categories = [
@@ -24,22 +27,12 @@ const categories = [
   "Other",
 ];
 
-function formatReportedAt(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Time unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
 export default function EmergencyReportForm({ onProgressChange }) {
   const [values, setValues] = useState(initialValues);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [requestError, setRequestError] = useState("");
-  const [deviceReportedAt, setDeviceReportedAt] = useState("");
   const submissionLock = useRef(false);
 
   function updateValue(name, value) {
@@ -71,6 +64,8 @@ export default function EmergencyReportForm({ onProgressChange }) {
       longitude: coordinatesAreValid ? values.longitude : null,
       location_text: values.location_text.trim() || null,
     };
+    const contactNumber = normalizeContactNumber(values.contact_number);
+    if (contactNumber) payload.contact_number = contactNumber;
 
     submissionLock.current = true;
     setIsSubmitting(true);
@@ -78,8 +73,7 @@ export default function EmergencyReportForm({ onProgressChange }) {
     const submittedAt = new Date().toISOString();
     try {
       const response = await submitIncident(payload);
-      setDeviceReportedAt(submittedAt);
-      setResult(response);
+      setResult({ ...response, reportedAt: submittedAt });
       onProgressChange?.({ ...response, reportedAt: submittedAt });
     } catch (error) {
       onProgressChange?.({ phase: "error" });
@@ -95,48 +89,21 @@ export default function EmergencyReportForm({ onProgressChange }) {
     setErrors({});
     setResult(null);
     setRequestError("");
-    setDeviceReportedAt("");
     onProgressChange?.(null);
   }
 
   if (result) {
-    const status = result.status || "pending";
     const mapLinks = getMapLinks(values);
 
     return (
       <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm sm:p-8" aria-live="polite" aria-labelledby="success-title">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-              <CheckCircle2 aria-hidden="true" size={25} />
-            </span>
-            <h2 id="success-title" className="text-xl font-bold text-slate-900">Report received</h2>
-            <p className="mt-1 text-sm text-slate-600">{result.message || "Your report was saved by RescueGrid AI."}</p>
-          </div>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold capitalize text-emerald-800">
-            {status.replaceAll("_", " ").replaceAll("-", " ")}
-          </span>
-        </div>
+        <span className="mb-3 flex size-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+          <CheckCircle2 aria-hidden="true" size={25} />
+        </span>
+        <h2 id="success-title" className="text-xl font-bold text-slate-900">Report received</h2>
+        <p className="mt-1 text-sm text-slate-600">{result.message || "Your report was saved by RescueGrid AI."}</p>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Incident ID</p>
-            <p className="mt-1 break-all font-mono text-base font-semibold text-slate-900">{result.id}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Clock3 aria-hidden="true" size={14} /> Reported at</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">{formatReportedAt(deviceReportedAt)}</p>
-            <p className="mt-1 text-xs text-slate-500">Your device time</p>
-          </div>
-        </div>
-
-        {result.trackingToken && (
-          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Private tracking token — shown once</p>
-            <p className="mt-2 break-all font-mono text-sm font-semibold text-slate-900">{result.trackingToken}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-600">Save this token securely. It is required to reopen status tracking; the incident ID alone cannot access it.</p>
-          </div>
-        )}
+        <SosStatusCard incident={{ ...result, submissionMode: "detailed" }} />
 
         {mapLinks.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -161,7 +128,7 @@ export default function EmergencyReportForm({ onProgressChange }) {
   return (
     <form onSubmit={handleSubmit} noValidate className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <div className="mb-5 border-b border-slate-100 pb-4">
-        <h2 className="text-lg font-semibold text-slate-900">Quick emergency report</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Detailed Emergency Report</h2>
         <p className="mt-1 text-sm text-slate-500">Tell responders what happened and where help is needed.</p>
       </div>
 
@@ -185,6 +152,14 @@ export default function EmergencyReportForm({ onProgressChange }) {
         </div>
 
         <LocationPicker values={values} onChange={updateValue} error={errors.location} />
+
+        <div>
+          <label htmlFor="contact_number" className="mb-1.5 block text-sm font-medium text-slate-800">Contact number <span className="font-normal text-slate-500">(optional)</span></label>
+          <input id="contact_number" type="tel" inputMode="tel" autoComplete="tel" maxLength={32} value={values.contact_number} onChange={(event) => updateValue("contact_number", event.target.value)} placeholder="+91 98765 43210" aria-invalid={Boolean(errors.contact_number)} aria-describedby={errors.contact_number ? "contact-number-error" : "contact-number-hint"} className="form-control" />
+          {errors.contact_number
+            ? <p id="contact-number-error" className="field-error">{errors.contact_number}</p>
+            : <p id="contact-number-hint" className="mt-1.5 text-xs text-slate-500">Indian or international numbers. Only verified operators can see it; it is never shown on public tracking.</p>}
+        </div>
 
         {requestError && (
           <div role="alert" className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

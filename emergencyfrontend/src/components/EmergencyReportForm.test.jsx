@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import EmergencyReportForm from "./EmergencyReportForm.jsx";
 import { submitIncident } from "../services/incidents.js";
 
-vi.mock("../services/incidents.js", () => ({ submitIncident: vi.fn() }));
+vi.mock("../services/incidents.js", () => ({ submitIncident: vi.fn(), trackIncident: vi.fn() }));
 
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText(/What kind of emergency/), { target: { value: "Flood" } });
@@ -99,5 +99,31 @@ describe("EmergencyReportForm", () => {
     expect(screen.getByRole("button", { name: "Sending report..." })).toBeDisabled();
     resolveSubmission({ id: "INC-23", message: "Received", status: "pending" });
     await waitFor(() => expect(screen.getByText("INC-23")).toBeInTheDocument());
+  });
+
+  it("submits without a contact number when the optional field is empty", async () => {
+    submitIncident.mockResolvedValue({ id: "INC-40", message: "Received", status: "pending" });
+    render(<EmergencyReportForm />);
+    fillRequiredFields();
+    await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
+    expect(await screen.findByText("INC-40")).toBeInTheDocument();
+    expect(submitIncident.mock.calls[0][0]).not.toHaveProperty("contact_number");
+  });
+
+  it("normalizes an optional contact number and rejects malformed ones", async () => {
+    submitIncident.mockResolvedValue({ id: "INC-41", message: "Received", status: "pending" });
+    render(<EmergencyReportForm />);
+    fillRequiredFields();
+    const contact = screen.getByLabelText(/Contact number/);
+    expect(contact).not.toBeRequired();
+    fireEvent.change(contact, { target: { value: "98-76" } });
+    await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
+    expect(await screen.findByText(/Enter a valid phone number/)).toBeInTheDocument();
+    expect(submitIncident).not.toHaveBeenCalled();
+
+    fireEvent.change(contact, { target: { value: "+44 (20) 7946-0958" } });
+    await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
+    expect(await screen.findByText("INC-41")).toBeInTheDocument();
+    expect(submitIncident).toHaveBeenCalledWith(expect.objectContaining({ contact_number: "+442079460958" }));
   });
 });

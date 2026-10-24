@@ -21,6 +21,15 @@ async function getIncident(req, res) {
 async function analyze(req, res) {
   const incident = await incidentRepository.getIncidentById(req.params.id);
   if (!incident) throw new AppError(404, 'Incident not found');
+  // Location-only Quick SOS reports have nothing for the AI to classify; operators triage them.
+  if (!incident.description?.trim()) {
+    throw new AppError(
+      422,
+      'This Quick SOS has no description to analyze; assess it manually with operator triage',
+      undefined,
+      'ANALYSIS_REQUIRES_DESCRIPTION',
+    );
+  }
 
   const analysisResult = await aiService.analyzeIncident(incident);
   const storedAnalysis = await incidentRepository.saveAnalysis(incident.id, analysisResult.analysis);
@@ -119,6 +128,17 @@ async function reviewDuplicate(req, res) {
   });
 }
 
+async function triage(req, res) {
+  const result = await incidentRepository.triageIncident({
+    incidentId: req.params.id,
+    emergencyType: req.body.emergency_type,
+    severity: req.body.severity,
+    operatorId: req.user.user_id,
+  });
+  if (!result) throw new AppError(404, 'Incident not found');
+  return success(res, { message: 'Incident triage recorded', data: result });
+}
+
 async function getTeamRecommendations(req, res) {
   const result = await teamRecommendationService.getTeamRecommendations(req.params.id);
   return success(res, { data: result });
@@ -138,4 +158,5 @@ module.exports = {
   getDuplicates,
   reviewDuplicate,
   getTeamRecommendations,
+  triage,
 };

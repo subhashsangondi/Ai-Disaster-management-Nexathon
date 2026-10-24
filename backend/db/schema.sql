@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS incidents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   reporter_id UUID REFERENCES users(id) ON DELETE SET NULL,
   emergency_type VARCHAR(100) NOT NULL CHECK (length(trim(emergency_type)) > 0),
-  description TEXT NOT NULL CHECK (length(trim(description)) >= 10),
+  description TEXT,
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
   location_text TEXT,
@@ -53,8 +53,30 @@ CREATE TABLE IF NOT EXISTS incidents (
   assigned_team_id UUID REFERENCES rescue_teams(id) ON DELETE SET NULL,
   resolved_at TIMESTAMPTZ,
   resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  submission_mode VARCHAR(20) NOT NULL DEFAULT 'detailed',
+  contact_number VARCHAR(32),
+  location_accuracy_meters DOUBLE PRECISION,
+  location_captured_at TIMESTAMPTZ,
+  triage_status VARCHAR(30) NOT NULL DEFAULT 'not_required',
+  assessed_severity VARCHAR(20),
+  triaged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  triaged_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT incidents_description_by_mode CHECK (
+    submission_mode = 'quick_sos'
+    OR (description IS NOT NULL AND length(trim(description)) >= 10)
+  ),
+  CONSTRAINT incidents_submission_mode_check CHECK (submission_mode IN ('detailed', 'quick_sos')),
+  CONSTRAINT incidents_contact_number_check
+    CHECK (contact_number IS NULL OR contact_number ~ '^\+?[0-9]{6,15}$'),
+  CONSTRAINT incidents_location_accuracy_check
+    CHECK (location_accuracy_meters IS NULL OR location_accuracy_meters >= 0),
+  CONSTRAINT incidents_triage_status_check
+    CHECK (triage_status IN ('not_required', 'needs_immediate_triage', 'assessed')),
+  CONSTRAINT incidents_assessed_severity_check CHECK (
+    assessed_severity IS NULL OR assessed_severity IN ('critical', 'high', 'medium', 'low', 'unknown')
+  ),
   CONSTRAINT valid_coordinates CHECK (
     (latitude IS NULL AND longitude IS NULL)
     OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180)
@@ -203,6 +225,8 @@ CREATE INDEX IF NOT EXISTS idx_incidents_emergency_type ON incidents(lower(emerg
 CREATE INDEX IF NOT EXISTS idx_incidents_coordinates ON incidents(latitude, longitude)
   WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_incidents_assigned_team ON incidents(assigned_team_id);
+CREATE INDEX IF NOT EXISTS idx_incidents_needs_triage ON incidents(created_at DESC)
+  WHERE triage_status = 'needs_immediate_triage';
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_incident_time ON ai_analyses(incident_id, analyzed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_urgency ON ai_analyses(urgency);
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_availability ON rescue_teams(availability);

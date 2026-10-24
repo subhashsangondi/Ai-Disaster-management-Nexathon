@@ -7,6 +7,7 @@ const {
   incidentFiltersSchema,
   assignmentSchema,
   statusSchema,
+  triageSchema,
 } = require('../validators/incidentValidator');
 const { rejectionSchema } = require('../validators/responseValidator');
 const { duplicateParamsSchema, duplicateReviewSchema } = require('../validators/duplicateValidator');
@@ -54,6 +55,12 @@ router.patch(
   validateRequest(uuidParamsSchema, 'params'),
   validateRequest(statusSchema),
   controller.updateStatus,
+);
+router.patch(
+  '/:id/triage',
+  validateRequest(uuidParamsSchema, 'params'),
+  validateRequest(triageSchema),
+  controller.triage,
 );
 
 module.exports = router;

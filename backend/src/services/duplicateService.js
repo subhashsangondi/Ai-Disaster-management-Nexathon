@@ -37,12 +37,14 @@ function textSimilarity(left, right) {
 
 function scoreCandidate(incident, candidate, radiusKm) {
   let score = 0;
-  const sameType = incident.emergency_type.toLowerCase() === candidate.emergency_type.toLowerCase();
+  const type = String(incident.emergency_type || '').toLowerCase();
+  // Two unassessed Quick SOS reports share the placeholder type, which is not evidence of a match.
+  const sameType = type !== 'unknown' && type === String(candidate.emergency_type || '').toLowerCase();
   if (sameType) score += 0.35;
 
   const text = textSimilarity(
-    `${incident.description} ${incident.location_text || ''}`,
-    `${candidate.description} ${candidate.location_text || ''}`,
+    `${incident.description || ''} ${incident.location_text || ''}`,
+    `${candidate.description || ''} ${candidate.location_text || ''}`,
   );
   score += text * 0.35;
 

@@ -1,40 +1,14 @@
 import { useState } from "react";
-import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck } from "lucide-react";
+import { Activity, ArrowUpRight, ShieldCheck } from "lucide-react";
 import EmergencyReportForm from "./components/EmergencyReportForm.jsx";
 import IncidentTracker from "./components/IncidentTracker.jsx";
-
-function normalizeStatus(status) {
-  return (status || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
-}
-
-const PUBLIC_INCIDENT_STATUSES = new Set(["pending", "assigned", "in_progress", "resolved"]);
-
-function formatReportedAt(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Time unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
+import QuickSos from "./components/QuickSos.jsx";
 
 export default function App() {
   const [incidentProgress, setIncidentProgress] = useState(null);
-  const [trackedIncident, setTrackedIncident] = useState(null);
   const [view, setView] = useState("report");
+  // Once a report is confirmed, its status lives only in the "Your SOS Status" card of the form that sent it.
   const isConfirmed = incidentProgress?.id !== undefined;
-  const reportedAt = incidentProgress?.reportedAt || "";
-  const trackedStatus = normalizeStatus(trackedIncident?.status);
-  const trackingMatchesConfirmedIncident = isConfirmed
-    && String(trackedIncident?.incident_reference) === String(incidentProgress.id)
-    && PUBLIC_INCIDENT_STATUSES.has(trackedStatus);
-  const latestStatus = trackingMatchesConfirmedIncident
-    ? trackedStatus
-    : normalizeStatus(incidentProgress?.status || "pending");
-  const confirmedStatusLabel = isConfirmed
-    ? latestStatus.replaceAll("_", " ")
-    : "";
-
   return (
     <div className="min-h-screen bg-[#f4f6f8] text-slate-900">
       <header className="border-b border-white/10 bg-[#0b1727] text-white">
@@ -63,8 +37,8 @@ export default function App() {
         </div>
 
         <div className="mb-7 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm" aria-label="Public portal sections">
-          <button type="button" onClick={() => setView("report")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "report" ? "bg-[#102238] text-white" : "text-slate-600 hover:bg-slate-50"}`}>Report emergency</button>
-          <button type="button" onClick={() => setView("track")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "track" ? "bg-[#102238] text-white" : "text-slate-600 hover:bg-slate-50"}`}>Track incident</button>
+          <button type="button" aria-pressed={view === "report"} onClick={() => setView("report")} className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold ${view === "report" ? "bg-[#102238] text-white" : "text-slate-600 hover:bg-slate-50"}`}>Report emergency</button>
+          <button type="button" aria-pressed={view === "track"} onClick={() => setView("track")} className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold ${view === "track" ? "bg-[#102238] text-white" : "text-slate-600 hover:bg-slate-50"}`}>Track incident</button>
         </div>
 
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-12">
@@ -76,60 +50,49 @@ export default function App() {
               </div>
               <h1 id="page-title" className="text-3xl font-bold tracking-tight text-[#101d2e] sm:text-4xl">{view === "report" ? "Report an Emergency" : "Track Your Incident"}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-                {view === "report" ? "Choose the emergency and location first. Add details only if you have time." : "Status access requires the private token issued when your report was submitted."}
+                {view === "report" ? "Send a Quick SOS with just your location, or add details in a full report if you have time." : "Status access requires the private token issued when your report was submitted."}
               </p>
             </div>
-            {view === "report"
-              ? <EmergencyReportForm onProgressChange={setIncidentProgress} />
-              : <IncidentTracker initialToken={incidentProgress?.trackingToken || ""} onVerifiedIncident={setTrackedIncident} />}
+            {/* Both views stay mounted so switching tabs never discards a just-issued tracking token. */}
+            <div className="space-y-6" hidden={view !== "report"}>
+              <QuickSos onProgressChange={setIncidentProgress} />
+              <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500" aria-hidden="true">
+                <span className="h-px flex-1 bg-slate-200" /> or send a detailed report <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <EmergencyReportForm onProgressChange={setIncidentProgress} />
+            </div>
+            <div hidden={view !== "track"}>
+              <IncidentTracker />
+            </div>
           </section>
 
           <aside className="space-y-5 lg:sticky lg:top-6 lg:pt-2">
-            <div className="rounded-2xl bg-[#102238] p-6 text-white shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-orange-300">
-                  {isConfirmed ? <CheckCircle2 aria-hidden="true" size={21} /> : <ShieldCheck aria-hidden="true" size={21} />}
-                </span>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Incident status</p>
-                  <h2 className="mt-0.5 text-lg font-semibold">
-                    {isConfirmed ? confirmedStatusLabel : incidentProgress?.phase === "submitting" ? "Sending report..." : "Ready when you are"}
-                  </h2>
+            {!isConfirmed && (
+              <div className="rounded-2xl bg-[#102238] p-6 text-white shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-orange-300">
+                    <ShieldCheck aria-hidden="true" size={21} />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Before you report</p>
+                    <h2 className="mt-0.5 text-lg font-semibold">
+                      {incidentProgress?.phase === "submitting" ? "Sending report..." : "Ready when you are"}
+                    </h2>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  {incidentProgress?.phase === "submitting"
+                    ? "Waiting for the reporting service to confirm your report."
+                    : incidentProgress?.phase === "error"
+                      ? "The server has not confirmed this report yet. You can try again."
+                      : "After you send your report, its status and private tracking token will appear with your confirmation."}
+                </p>
+                <div className="mt-5 flex items-start gap-2 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
+                  <ArrowUpRight aria-hidden="true" className="mt-0.5 shrink-0 text-orange-300" size={15} />
+                  Rescue-team assignment is managed by authenticated operators. Victims can view safe status updates with a private tracking token.
                 </div>
               </div>
-              {isConfirmed ? (
-                <>
-                  <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-3.5">
-                    <p className="text-xs text-slate-400">Incident ID</p>
-                    <p className="mt-1 break-all font-mono text-sm font-semibold">{incidentProgress.id}</p>
-                    {reportedAt && (
-                      <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-300">
-                        <Clock3 aria-hidden="true" size={13} />
-                        {formatReportedAt(reportedAt)}
-                      </p>
-                    )}
-                  </div>
-                  <p className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-                    Use your private token to see safe response updates. Internal notes, identities, evidence, and precise location data remain private.
-                  </p>
-                  {incidentProgress.trackingToken && <button type="button" onClick={() => setView("track")} className="mt-3 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15">Open secure tracking</button>}
-                </>
-              ) : (
-                <>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {incidentProgress?.phase === "submitting"
-                      ? "Waiting for the reporting service to confirm your report."
-                      : incidentProgress?.phase === "error"
-                        ? "The server has not confirmed this report yet. You can try again."
-                        : "After you send your report, its confirmed status and response progress will appear here."}
-                  </p>
-                  <div className="mt-5 flex items-start gap-2 border-t border-white/10 pt-4 text-xs leading-5 text-slate-400">
-                    <ArrowUpRight aria-hidden="true" className="mt-0.5 shrink-0 text-orange-300" size={15} />
-                    Rescue-team assignment is managed by authenticated operators. Victims can view safe status updates with a private tracking token.
-                  </div>
-                </>
-              )}
-            </div>
+            )}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="text-sm font-semibold text-slate-900">For your safety</h2>
@@ -144,7 +107,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-6 text-xs leading-5 text-slate-500 sm:px-8 md:flex-row md:items-center md:justify-between">
           <p>RescueGrid AI · Community emergency reporting</p>
-          <p>This demo form does not itself dispatch rescue services.</p>
+          <p>Hackathon demo: not connected to official emergency services. In India, call <a href="tel:112" className="font-semibold underline">112</a> in a real emergency.</p>
         </div>
       </footer>
     </div>

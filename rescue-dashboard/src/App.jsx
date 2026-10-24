@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "leaflet/dist/leaflet.css";
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, MapContainer, Pane, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import {
   ApiError,
   analyzeIncident,
@@ -31,6 +31,7 @@ import {
   createTeam,
   updateTeam,
   getTeamRecommendations,
+  triageIncident,
 } from "./services/api.js";
 import {
   EMPTY_TEAM_DRAFT,
@@ -50,7 +51,8 @@ import {
   validateTeamDraft,
   visibleCapabilityBadges,
 } from "./teamManagement.js";
-import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, bindMapResize, createViewportController } from "./mapView.js";
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, bindMapResize, createViewportController, incidentCoordinates, mapMarkers } from "./mapView.js";
+import { SEVERITY_LEVELS, TRIAGE_EMERGENCY_TYPES, accuracyLabel, canAnalyze, incidentDescription, isQuickSos, isUnknownType, needsTriage, severityFor } from "./quickSos.js";
 import { formatProviderMetadata } from "./analysisPresentation.js";
 
 const STATUS_LABELS = {
@@ -79,14 +81,21 @@ function statusLabel(status) {
 }
 
 function urgencyFor(incident) {
-  return incident.latest_analysis?.urgency || "unknown";
+  return severityFor(incident);
+}
+
+function QuickSosBadges({ incident }) {
+  if (!isQuickSos(incident)) return null;
+  return (
+    <>
+      <span className="quick-sos-badge">Quick SOS</span>
+      {needsTriage(incident) && <span className="triage-badge">Needs Immediate Triage</span>}
+    </>
+  );
 }
 
 function hasCoordinates(incident) {
-  const latitude = Number(incident.latitude);
-  const longitude = Number(incident.longitude);
-  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
-    && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+  return incidentCoordinates(incident) !== null;
 }
 
 function apiMessage(error, fallback) {
@@ -245,7 +254,7 @@ function ResponderDashboard({ session, onLogout }) {
           return (
             <article className="mission-card" key={assignment.id}>
               <div className="mission-heading"><div><p className="eyebrow">{assignment.team_name}</p><h2>{assignment.emergency_type}</h2><p>{assignment.location_text || `${assignment.latitude}, ${assignment.longitude}`}</p></div><span className="status in-progress">{progressLabel(assignment.progress_status)}</span></div>
-              <p className="mission-description">{assignment.description}</p>
+              <p className="mission-description">{incidentDescription(assignment)}</p>
               <div className="mission-actions">
                 {assignment.progress_status === "assigned" && <button className="primary-button" disabled={busyId === assignment.id} type="button" onClick={() => run(assignment.id, () => acknowledgeResponderAssignment(session.token, assignment.id))}>{busyId === assignment.id ? "Saving..." : "Acknowledge assignment"}</button>}
                 {next && <><label htmlFor={`notes-${assignment.id}`}>Optional field notes</label><textarea id={`notes-${assignment.id}`} rows="3" maxLength="2000" value={notes[assignment.id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [assignment.id]: event.target.value }))} /><button className="primary-button" disabled={busyId === assignment.id} type="button" onClick={() => run(assignment.id, () => submitResponderProgress(session.token, assignment.id, next, notes[assignment.id] || ""))}>Report {progressLabel(next)}</button></>}
@@ -279,8 +288,38 @@ function MapViewport({ incidents, resetToken }) {
   return null;
 }
 
+function IncidentMarker({ marker, onSelect }) {
+  const { incident, position, colocated } = marker;
+  const urgency = urgencyFor(incident);
+  const triage = needsTriage(incident);
+  return (
+    <CircleMarker
+      center={position}
+      radius={triage ? 10 : 8}
+      pathOptions={{ color: triage ? "#7f1d1d" : "#ffffff", weight: triage ? 3 : 2, fillColor: URGENCY_COLORS[urgency], fillOpacity: 1 }}
+      eventHandlers={{ click: () => onSelect(incident.id) }}
+    >
+      <Popup>
+        <div className="incident-popup">
+          <strong>{incident.emergency_type}</strong>
+          <QuickSosBadges incident={incident} />
+          <p className="incident-popup-reference">Ref: {incident.id}</p>
+          <p>{incidentDescription(incident)}</p>
+          <p>Urgency: {urgency}</p>
+          <p>Status: {statusLabel(incident.status)}</p>
+          {isQuickSos(incident) && <p>Triage: {triage ? "Needs immediate triage" : "Triaged"}</p>}
+          {colocated > 0 && <p>{colocated} other {colocated === 1 ? "report" : "reports"} at this exact location.</p>}
+          <button className="link-button" type="button" onClick={() => onSelect(incident.id)}>Open details</button>
+        </div>
+      </Popup>
+    </CircleMarker>
+  );
+}
+
 function IncidentMap({ incidents, onSelect }) {
-  const mappedIncidents = useMemo(() => incidents.filter(hasCoordinates), [incidents]);
+  const markers = useMemo(() => mapMarkers(incidents), [incidents]);
+  const triageMarkers = markers.filter((marker) => needsTriage(marker.incident));
+  const otherMarkers = markers.filter((marker) => !needsTriage(marker.incident));
   const [resetToken, setResetToken] = useState(0);
   return (
     <div className="map-wrap">
@@ -291,31 +330,14 @@ function IncidentMap({ incidents, onSelect }) {
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           maxZoom={19}
         />
-        <MapViewport incidents={mappedIncidents} resetToken={resetToken} />
-        {mappedIncidents.map((incident) => {
-          const urgency = urgencyFor(incident);
-          return (
-            <CircleMarker
-              key={incident.id}
-              center={[Number(incident.latitude), Number(incident.longitude)]}
-              radius={8}
-              pathOptions={{ color: "#ffffff", weight: 2, fillColor: URGENCY_COLORS[urgency], fillOpacity: 1 }}
-              eventHandlers={{ click: () => onSelect(incident.id) }}
-            >
-              <Popup>
-                <div className="incident-popup">
-                  <strong>{incident.emergency_type}</strong>
-                  <p>{incident.description}</p>
-                  <p>Urgency: {urgency}</p>
-                  <p>Status: {statusLabel(incident.status)}</p>
-                  <button className="link-button" type="button" onClick={() => onSelect(incident.id)}>Open details</button>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
+        <MapViewport incidents={incidents} resetToken={resetToken} />
+        {otherMarkers.map((marker) => <IncidentMarker key={marker.incident.id} marker={marker} onSelect={onSelect} />)}
+        {/* Untriaged SOS markers sit in a higher pane so co-located older reports can never cover them. */}
+        <Pane name="triage-markers" style={{ zIndex: 450 }}>
+          {triageMarkers.map((marker) => <IncidentMarker key={marker.incident.id} marker={marker} onSelect={onSelect} />)}
+        </Pane>
       </MapContainer>
-      {mappedIncidents.length === 0 && <p className="map-empty">No incidents with GPS coordinates are available.</p>}
+      {markers.length === 0 && <p className="map-empty">No incidents with GPS coordinates are available.</p>}
     </div>
   );
 }
@@ -495,7 +517,7 @@ function AnalysisPanel({ incident, analysisResult, isAnalyzing, onAnalyze, onSel
           <h3 id="analysis-title">AI analysis</h3>
           {provider && <span className={`provider-badge ${provider.fallbackUsed ? "fallback" : "primary"}`} title={`Model: ${provider.model}`}>{provider.label} · {provider.model}</span>}
         </div>
-        <button className="secondary-button" type="button" onClick={onAnalyze} disabled={isAnalyzing}>
+        <button className="secondary-button" type="button" onClick={onAnalyze} disabled={isAnalyzing || !canAnalyze(incident)}>
           {isAnalyzing ? "Analyzing..." : analysis ? "Run new analysis" : "Analyze incident"}
         </button>
       </div>
@@ -607,7 +629,37 @@ function RecommendedTeams({ recommendationData, selectedTeamId, onSelectTeam }) 
   );
 }
 
-function IncidentDetail({ incident, teams, analysisResult, duplicateData, recommendationData, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onReviewDuplicate, onSelectIncident }) {
+function TriagePanel({ incident, busy, onTriage }) {
+  const [emergencyType, setEmergencyType] = useState(isUnknownType(incident.emergency_type) ? "" : incident.emergency_type);
+  const [severity, setSeverity] = useState(incident.assessed_severity || "");
+  const typeOptions = TRIAGE_EMERGENCY_TYPES.includes(incident.emergency_type) || isUnknownType(incident.emergency_type)
+    ? TRIAGE_EMERGENCY_TYPES
+    : [incident.emergency_type, ...TRIAGE_EMERGENCY_TYPES];
+  return (
+    <section className="detail-section triage-section" aria-labelledby="triage-title">
+      <div className="detail-section-heading"><div><p className="eyebrow">HUMAN ASSESSMENT</p><h3 id="triage-title">Quick SOS triage</h3></div></div>
+      {needsTriage(incident)
+        ? <div className="alert error">This Quick SOS has only a location. Contact the victim if possible and record the emergency type and severity. Nothing has been assigned automatically.</div>
+        : <p className="field-note">Triage recorded{incident.triaged_at ? ` ${formatDate(incident.triaged_at)}` : ""}. You can update it if new information arrives.</p>}
+      {isUnknownType(incident.emergency_type) && <p className="field-note">Emergency type is Unknown, so team recommendations can only use general capabilities.</p>}
+      <form className="triage-form" onSubmit={(event) => { event.preventDefault(); onTriage({ emergency_type: emergencyType, severity }); }}>
+        <label htmlFor="triage-type">Emergency type</label>
+        <select id="triage-type" value={emergencyType} onChange={(event) => setEmergencyType(event.target.value)} required>
+          <option value="">Select emergency type</option>
+          {typeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+        </select>
+        <label htmlFor="triage-severity">Severity</label>
+        <select id="triage-severity" value={severity} onChange={(event) => setSeverity(event.target.value)} required>
+          <option value="">Select severity</option>
+          {SEVERITY_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+        </select>
+        <button className="primary-button" type="submit" disabled={busy || !emergencyType || !severity}>{busy ? "Saving..." : "Save triage"}</button>
+      </form>
+    </section>
+  );
+}
+
+function IncidentDetail({ incident, teams, analysisResult, duplicateData, recommendationData, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onReviewDuplicate, onSelectIncident, onTriage }) {
   const [teamId, setTeamId] = useState("");
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -622,6 +674,7 @@ function IncidentDetail({ incident, teams, analysisResult, duplicateData, recomm
         <div>
           <p className="eyebrow">INCIDENT {incident.id}</p>
           <h2 id="detail-title">{incident.emergency_type}</h2>
+          <div className="detail-badges"><QuickSosBadges incident={incident} /></div>
           <p>Reported {formatDate(incident.created_at)}</p>
         </div>
         <span className={`status ${incident.status.replaceAll("_", "-")}`}>{statusLabel(incident.status)}</span>
@@ -629,13 +682,18 @@ function IncidentDetail({ incident, teams, analysisResult, duplicateData, recomm
       {actionError && <div className="alert error" role="alert">{actionError}</div>}
       {successMessage && <div className="alert success" role="status">{successMessage}</div>}
       <div className="detail-grid">
-        <div><span>Description</span><p>{incident.description}</p></div>
-        <div><span>Location</span><p>{incident.location_text || "No written location"}</p>{hasCoordinates(incident) && <small>{incident.latitude}, {incident.longitude}</small>}</div>
+        <div><span>Description</span><p>{incidentDescription(incident)}</p></div>
+        <div><span>Location</span><p>{incident.location_text || "No written location"}</p>{hasCoordinates(incident) && <small>{incident.latitude}, {incident.longitude}{isQuickSos(incident) && ` · ${accuracyLabel(incident.location_accuracy_meters)}`}</small>}</div>
+        {isQuickSos(incident) && <div><span>Submitted</span><p>{formatDate(incident.created_at)}</p>{incident.location_captured_at && <small>Location captured {formatDate(incident.location_captured_at)}</small>}</div>}
+        <div><span>Severity</span><p>{incident.assessed_severity ? `${incident.assessed_severity} (operator assessed)` : incident.latest_analysis?.urgency ? `${incident.latest_analysis.urgency} (AI advisory)` : "Not yet assessed"}</p></div>
+        {incident.contact_number && <div><span>Contact number</span><p><a href={`tel:${incident.contact_number}`}>{incident.contact_number}</a></p><small>Victim-provided. Operators only.</small></div>}
         <div><span>Assigned team</span><p>{incident.assigned_team?.team_name || "Not assigned"}</p></div>
         <div><span>Last updated</span><p>{formatDate(incident.updated_at)}</p></div>
         {incident.assignment && <div><span>Assignment notification</span><p>{incident.assignment.notification_acknowledged_at ? `Acknowledged ${formatDate(incident.assignment.notification_acknowledged_at)}` : incident.assignment.notification_read_at ? `Read ${formatDate(incident.assignment.notification_read_at)}` : "Unread by team"}</p></div>}
         {incident.assignment && <div><span>Field progress</span><p>{progressLabel(incident.assignment.progress_status)}</p></div>}
       </div>
+
+      {isQuickSos(incident) && <TriagePanel key={`${incident.id}-${incident.triaged_at || "new"}`} incident={incident} busy={busyAction === "triage"} onTriage={onTriage} />}
 
       <AnalysisPanel incident={incident} analysisResult={analysisResult} isAnalyzing={busyAction === "analyze"} onAnalyze={onAnalyze} onSelectIncident={onSelectIncident} />
 
@@ -807,6 +865,10 @@ function Dashboard({ session, onLogout }) {
     if (result) setAnalysisResult(result);
   }
 
+  async function handleTriage(triage) {
+    await runAction("triage", () => triageIncident(session.token, selectedId, triage), "Triage recorded.");
+  }
+
   async function handleAssign(teamId) {
     await runAction("assign", () => assignTeam(session.token, selectedId, teamId), "Rescue team assigned.");
   }
@@ -875,11 +937,11 @@ function Dashboard({ session, onLogout }) {
 
         <section id="incidents" className="panel incidents-panel">
           <div className="panel-heading"><div><h2>Recent Incidents</h2><p>Automatically refreshed from PostgreSQL through the API.</p></div><span className="incident-count">{incidents.length} shown</span></div>
-          {incidents.length === 0 ? <div className="empty-state">No incidents have been reported.</div> : <div className="incident-list">{incidents.map((incident) => { const urgency = urgencyFor(incident); return <article className={`incident-row ${selectedId === incident.id ? "selected" : ""}`} key={incident.id}><button type="button" className="incident-select" onClick={() => selectIncident(incident.id)}><span className="incident-symbol">!</span><span className="incident-details"><span className="incident-title-line"><strong>{incident.emergency_type}</strong><span className={`urgency ${urgency}`}>{urgency}</span>{incident.duplicate_role === "duplicate" && <span className="linked-badge">Linked duplicate</span>}{incident.duplicate_role === "primary" && <span className="linked-badge">Primary · {incident.linked_incident_count} linked</span>}</span><span className="incident-description">{incident.description}</span><span className="incident-location">{incident.location_text || (hasCoordinates(incident) ? `${incident.latitude}, ${incident.longitude}` : "Location unavailable")}</span></span><span className={`status ${incident.linked_resolution_verified_at ? "resolved" : incident.status.replaceAll("_", "-")}`}>{incident.linked_resolution_verified_at ? "Verified Resolved" : statusLabel(incident.status)}</span></button></article>; })}</div>}
+          {stats?.needs_triage > 0 && <div className="alert error triage-banner" role="status">{stats.needs_triage} Quick SOS {stats.needs_triage === 1 ? "report needs" : "reports need"} immediate triage.</div>}{incidents.length === 0 ? <div className="empty-state">No incidents have been reported.</div> : <div className="incident-list">{incidents.map((incident) => { const urgency = urgencyFor(incident); return <article className={`incident-row ${selectedId === incident.id ? "selected" : ""}`} key={incident.id}><button type="button" className="incident-select" onClick={() => selectIncident(incident.id)}><span className="incident-symbol">!</span><span className="incident-details"><span className="incident-title-line"><strong>{incident.emergency_type}</strong><span className={`urgency ${urgency}`}>{urgency}</span><QuickSosBadges incident={incident} />{incident.duplicate_role === "duplicate" && <span className="linked-badge">Linked duplicate</span>}{incident.duplicate_role === "primary" && <span className="linked-badge">Primary · {incident.linked_incident_count} linked</span>}</span><span className="incident-description">{incidentDescription(incident)}</span><span className="incident-location">{incident.location_text || (hasCoordinates(incident) ? `${incident.latitude}, ${incident.longitude}` : "Location unavailable")}</span></span><span className={`status ${incident.linked_resolution_verified_at ? "resolved" : incident.status.replaceAll("_", "-")}`}>{incident.linked_resolution_verified_at ? "Verified Resolved" : statusLabel(incident.status)}</span></button></article>; })}</div>}
         </section>
 
         {isDetailLoading && <section className="panel detail-panel"><div className="empty-state">Loading incident details...</div></section>}
-        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} duplicateData={duplicateData} recommendationData={recommendationData} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onReviewDuplicate={handleReviewDuplicate} onSelectIncident={selectIncident} />}
+        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} duplicateData={duplicateData} recommendationData={recommendationData} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onReviewDuplicate={handleReviewDuplicate} onSelectIncident={selectIncident} onTriage={handleTriage} />}
 
         <TeamManagement session={session} teams={teams} onSave={handleSaveTeam} />
         <footer className="footer"><span>RescueGrid AI — Rescue Coordination Platform</span><span>Live backend data · Human review required</span></footer>

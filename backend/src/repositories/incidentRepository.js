@@ -3,7 +3,9 @@ const db = require('../config/database');
 const incidentColumns = `
   i.id, i.reporter_id, i.emergency_type, i.description,
   i.latitude, i.longitude, i.location_text, i.status,
-  i.assigned_team_id, i.resolved_at, i.resolved_by, i.created_at, i.updated_at`;
+  i.assigned_team_id, i.resolved_at, i.resolved_by, i.created_at, i.updated_at,
+  i.submission_mode, i.contact_number, i.location_accuracy_meters, i.location_captured_at,
+  i.triage_status, i.assessed_severity, i.triaged_at`;
 
 async function createIncident(data) {
   const client = await db.pool.connect();
@@ -11,16 +13,22 @@ async function createIncident(data) {
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO incidents
-        (reporter_id, emergency_type, description, latitude, longitude, location_text, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+        (reporter_id, emergency_type, description, latitude, longitude, location_text, status,
+         submission_mode, contact_number, location_accuracy_meters, location_captured_at, triage_status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         data.reporter_id || null,
         data.emergency_type,
-        data.description,
+        data.description ?? null,
         data.latitude ?? null,
         data.longitude ?? null,
         data.location_text || null,
+        data.submission_mode || 'detailed',
+        data.contact_number || null,
+        data.location_accuracy_meters ?? null,
+        data.location_captured_at || null,
+        data.triage_status || 'not_required',
       ],
     );
     if (data.tracking_token_hash) {
@@ -209,6 +217,37 @@ async function savePossibleDuplicates(incidentId, candidates) {
   return saved;
 }
 
+async function triageIncident({ incidentId, emergencyType, severity, operatorId }) {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE incidents
+       SET emergency_type = $2, assessed_severity = $3, triage_status = 'assessed',
+           triaged_by = $4, triaged_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, emergency_type, assessed_severity, triage_status, triaged_at`,
+      [incidentId, emergencyType, severity, operatorId],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await client.query(
+      `INSERT INTO audit_events (actor_id, action, entity_type, entity_id, metadata)
+       VALUES ($1, 'incident_triaged', 'incident', $2, $3::jsonb)`,
+      [operatorId, incidentId, JSON.stringify({ emergency_type: emergencyType, severity })],
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function getDashboardStats() {
   const result = await db.query(
     `SELECT
@@ -225,6 +264,8 @@ async function getDashboardStats() {
           ORDER BY dashboard_analysis.analyzed_at DESC LIMIT 1
         ) dashboard_latest ON true
         WHERE dashboard_latest.urgency = 'critical') AS critical_recommendations,
+       (SELECT COUNT(*)::int FROM incidents
+        WHERE triage_status = 'needs_immediate_triage' AND status <> 'resolved') AS needs_triage,
        (SELECT COUNT(*)::int FROM rescue_teams WHERE availability = 'available') AS available_teams`,
   );
   return result.rows[0];
@@ -239,4 +280,5 @@ module.exports = {
   findDuplicateCandidates,
   savePossibleDuplicates,
   getDashboardStats,
+  triageIncident,
 };

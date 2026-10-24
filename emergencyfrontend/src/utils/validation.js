@@ -1,3 +1,5 @@
+import { contactNumberError } from "./contactNumber.js";
+
 export const MIN_DESCRIPTION_LENGTH = 10;
 export const MAX_DESCRIPTION_LENGTH = 5000;
 
@@ -32,6 +34,9 @@ export function validateIncident(values) {
   if (!coordinatesAreValid && !hasManualLocation && !errors.location) {
     errors.location = "Use your current location or enter a location manually.";
   }
+
+  const contactError = contactNumberError(values.contact_number);
+  if (contactError) errors.contact_number = contactError;
 
   return errors;
 }

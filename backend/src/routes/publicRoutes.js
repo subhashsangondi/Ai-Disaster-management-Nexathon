@@ -2,6 +2,8 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const env = require('../config/env');
 const controller = require('../controllers/publicTrackingController');
+const validateRequest = require('../middleware/validateRequest');
+const { victimDetailsSchema } = require('../validators/sosValidator');
 
 const router = express.Router();
 const trackingLimiter = rateLimit({
@@ -13,5 +15,11 @@ const trackingLimiter = rateLimit({
 });
 
 router.get('/incidents/track', trackingLimiter, controller.trackIncident);
+router.patch(
+  '/incidents/track/details',
+  trackingLimiter,
+  validateRequest(victimDetailsSchema),
+  controller.addQuickSosDetails,
+);
 
 module.exports = router;

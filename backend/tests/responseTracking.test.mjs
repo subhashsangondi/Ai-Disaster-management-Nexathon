@@ -197,6 +197,7 @@ describe('secure victim tracking', () => {
     expect(tracked).toEqual({
       incident_reference: incidentId,
       emergency_type: 'flood',
+      submission_mode: 'detailed',
       status: 'resolved',
       submitted_at: '2026-01-01T00:00:00Z',
       last_updated_at: '2026-01-01T01:00:00Z',

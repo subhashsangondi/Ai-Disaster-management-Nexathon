@@ -252,3 +252,12 @@ export const incidentPollMs = (() => {
   const value = Number(clientEnv.VITE_INCIDENT_POLL_MS);
   return Number.isFinite(value) && value >= 5000 ? value : 15000;
 })();
+
+export async function triageIncident(token, incidentId, triage) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/triage`, {
+    method: "PATCH",
+    token,
+    body: { emergency_type: triage.emergency_type, severity: triage.severity },
+  });
+  return { ...response.data, message: response.message };
+}

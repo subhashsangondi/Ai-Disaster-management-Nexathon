@@ -6,4 +6,9 @@ async function trackIncident(req, res) {
   return success(res, { data: incident });
 }
 
-module.exports = { trackIncident };
+async function addQuickSosDetails(req, res) {
+  const result = await trackingService.updateQuickSosDetails(req.get('x-incident-tracking-token'), req.body);
+  return success(res, { message: 'Thank you. Your details were added to your SOS.', data: result });
+}
+
+module.exports = { trackIncident, addQuickSosDetails };
