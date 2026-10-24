@@ -10,6 +10,24 @@ vi.mock("./components/EmergencyLocationMap.jsx", () => ({
 }));
 
 describe("public incident confirmation", () => {
+  it("routes the centered SOS link to the dedicated page and back", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/What kind of emergency/), { target: { value: "Flood" } });
+
+    const sosLink = screen.getByRole("link", { name: "Open dedicated SOS page" });
+    expect(sosLink).toHaveAttribute("href", "/sos");
+    expect(sosLink.closest("form")).toBeNull();
+    expect(sosLink.compareDocumentPosition(screen.getByRole("heading", { name: "Quick emergency report" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await userEvent.click(sosLink);
+    expect(await screen.findByRole("heading", { name: "Send an SOS" })).toBeInTheDocument();
+    expect(screen.getByText("Voice Note (Optional)")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Back to emergency report" }));
+    expect(await screen.findByRole("heading", { name: "Quick emergency report" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/What kind of emergency/)).toHaveValue("Flood");
+  });
+
   it("shows receipt status without inventing public tracking", async () => {
     submitIncident.mockResolvedValue({
       id: "INC-808",

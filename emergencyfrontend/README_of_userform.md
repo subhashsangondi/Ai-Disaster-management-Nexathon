@@ -76,6 +76,12 @@ The initial map view is only an unpinned India overview, not a reported location
 
 The right-side progress indicator reflects the status returned by the SOS response (`pending`, `assigned`, `in_progress`, or `resolved`) and does not claim team assignment without confirmation from the backend. The public API does not provide ongoing status lookup; the shown status is the latest status returned when the report was submitted.
 
+## Dedicated SOS page
+
+The emergency reporting page has a prominent, centered square **SOS** button below the **Report an Emergency** heading and above the separate **Quick emergency report** card. It opens `/sos`. The dedicated page requests browser location on entry, uses the same satellite map for GPS or manually tapped coordinates, and supports an optional local voice recording with playback and removal. The existing backend accepts JSON coordinates at `POST /api/sos` but does not accept or store audio. To avoid silently discarding a recording, the page requires it to be removed before sending a location-only SOS. The server response must confirm an incident ID before the page shows success.
+
+The backend's SOS route allows anonymous submissions and optionally accepts a valid bearer token. This frontend currently has no login/token management and sends the public request without a token. Adding authenticated SOS submissions requires integrating the app with a frontend login/token provider.
+
 ## Checks
 
 ```bash

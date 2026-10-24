@@ -41,6 +41,20 @@ function MapViewport({ latitude, longitude, hasCoordinates }) {
     }
   }, [latitude, longitude, hasCoordinates, map]);
 
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const container = map.getContainer?.();
+    if (!container) return undefined;
+
+    const observer = new ResizeObserver(() => {
+      if (container.clientWidth > 0 && container.clientHeight > 0) {
+        map.invalidateSize?.({ pan: false });
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+
   return null;
 }
 

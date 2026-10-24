@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck } from "lucide-react";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck, Siren } from "lucide-react";
 import EmergencyReportForm from "./components/EmergencyReportForm.jsx";
+import SosPage from "./pages/SosPage.jsx";
 
 function normalizeStatus(status) {
   return (status || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
@@ -28,7 +30,7 @@ function getResponseStage(status) {
   return stage < 0 ? 0 : stage;
 }
 
-export default function App() {
+function EmergencyReportPage() {
   const [incidentProgress, setIncidentProgress] = useState(null);
   const isConfirmed = incidentProgress?.id !== undefined;
   const reportedAt = incidentProgress?.reportedAt || "";
@@ -76,6 +78,17 @@ export default function App() {
               <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
                 Choose the emergency and location first. Add details only if you have time.
               </p>
+            </div>
+            <div className="mb-7 flex flex-col items-center text-center">
+              <Link
+                to="/sos"
+                aria-label="Open dedicated SOS page"
+                className="inline-flex size-28 flex-col items-center justify-center gap-2 rounded-xl border-4 border-red-100 bg-red-600 text-lg font-extrabold text-white shadow-lg shadow-red-900/20 transition hover:scale-[1.03] hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-700 sm:size-32"
+              >
+                <Siren aria-hidden="true" size={38} strokeWidth={2.5} />
+                SOS
+              </Link>
+              <p className="mt-2 text-sm font-semibold text-red-700">Need urgent help? Send an SOS</p>
             </div>
             <EmergencyReportForm onProgressChange={setIncidentProgress} />
           </section>
@@ -157,5 +170,37 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <ApplicationRoutes />
+    </BrowserRouter>
+  );
+}
+
+function ApplicationRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<ApplicationPages />} />
+      <Route path="/sos" element={<ApplicationPages />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function ApplicationPages() {
+  const { pathname } = useLocation();
+  const isSosPage = pathname === "/sos";
+
+  return (
+    <>
+      <div hidden={isSosPage}>
+        <EmergencyReportPage />
+      </div>
+      {isSosPage && <SosPage />}
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import EmergencyReportForm from "./EmergencyReportForm.jsx";
 import { submitIncident } from "../services/incidents.js";
 
@@ -16,13 +17,21 @@ function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText(/Manual location/), { target: { value: "Oak Street" } });
 }
 
+function renderReportForm() {
+  return render(
+    <MemoryRouter>
+      <EmergencyReportForm />
+    </MemoryRouter>,
+  );
+}
+
 describe("EmergencyReportForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("validates required fields before sending", async () => {
-    render(<EmergencyReportForm />);
+    renderReportForm();
     await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
     expect(await screen.findByText("Choose an emergency category.")).toBeInTheDocument();
     expect(screen.getByText("Choose who is reporting.")).toBeInTheDocument();
@@ -39,7 +48,7 @@ describe("EmergencyReportForm", () => {
       analysisStatus: "pending",
       notice: "Stored immediately",
     });
-    render(<EmergencyReportForm />);
+    renderReportForm();
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("People affected"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("People injured"), { target: { value: "1" } });
@@ -64,7 +73,7 @@ describe("EmergencyReportForm", () => {
 
   it("retains form data and allows retry after a network failure", async () => {
     submitIncident.mockRejectedValueOnce(new Error("Could not reach the reporting server.")).mockResolvedValueOnce({ id: "INC-9", message: "Received", status: "pending" });
-    render(<EmergencyReportForm />);
+    renderReportForm();
     fillRequiredFields();
     await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
 
@@ -77,7 +86,7 @@ describe("EmergencyReportForm", () => {
   it("handles denied geolocation and still allows a manual location", async () => {
     const getCurrentPosition = vi.fn((_success, failure) => failure({ code: 1 }));
     Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
-    render(<EmergencyReportForm />);
+    renderReportForm();
     await userEvent.click(screen.getByRole("button", { name: "Use My Current Location" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Location permission was denied");
@@ -90,7 +99,7 @@ describe("EmergencyReportForm", () => {
       value: { getCurrentPosition: (success) => success({ coords: { latitude: 1.25, longitude: -2.75 } }) },
     });
     submitIncident.mockResolvedValue({ id: "INC-31", message: "Received", status: "pending" });
-    render(<EmergencyReportForm />);
+    renderReportForm();
     await userEvent.click(screen.getByRole("button", { name: "Use My Current Location" }));
     fireEvent.change(screen.getByLabelText(/What kind of emergency/), { target: { value: "Flood" } });
     fireEvent.change(screen.getByLabelText(/I am reporting as/), { target: { value: "victim" } });
@@ -103,7 +112,7 @@ describe("EmergencyReportForm", () => {
 
   it("allows an empty description but checks an optional description when supplied", async () => {
     submitIncident.mockResolvedValue({ id: "INC-OPT", message: "Received", status: "pending" });
-    render(<EmergencyReportForm />);
+    renderReportForm();
     fillRequiredFields();
     await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
     expect(await screen.findByText("INC-OPT")).toBeInTheDocument();
@@ -111,7 +120,7 @@ describe("EmergencyReportForm", () => {
   });
 
   it("shows field-level validation for a short optional description and keeps counts consistent", async () => {
-    render(<EmergencyReportForm />);
+    renderReportForm();
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText(/Emergency details/), { target: { value: "Too short" } });
     fireEvent.change(screen.getByLabelText("People injured"), { target: { value: "3" } });
@@ -125,7 +134,7 @@ describe("EmergencyReportForm", () => {
   it("locks immediately against repeated submit events", async () => {
     let resolveSubmission;
     submitIncident.mockReturnValue(new Promise((resolve) => { resolveSubmission = resolve; }));
-    render(<EmergencyReportForm />);
+    renderReportForm();
     fillRequiredFields();
     const form = screen.getByRole("button", { name: "Send Emergency Report" }).closest("form");
     fireEvent.submit(form);
