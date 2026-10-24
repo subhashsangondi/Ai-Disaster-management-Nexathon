@@ -83,5 +83,37 @@ export async function submitIncident(payload, idempotencyKey) {
     status: typeof body.data.status === "string" ? body.data.status.trim() : "",
     analysisStatus: typeof body.data.analysis_status === "string" ? body.data.analysis_status.trim() : "",
     notice: typeof body.data.notice === "string" ? body.data.notice.trim() : "",
+    trackingToken: typeof body.data.tracking_token === "string" ? body.data.tracking_token.trim() : "",
   };
+}
+
+export async function trackIncident(trackingToken) {
+  const token = trackingToken.trim();
+  if (!token) throw new IncidentApiError("Enter the tracking token provided when you submitted the report.");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/public/incidents/track`, {
+      method: "GET",
+      headers: { Accept: "application/json", "X-Incident-Tracking-Token": token },
+      credentials: "omit",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new IncidentApiError("The tracking service took too long to respond. Please try again.");
+    throw new IncidentApiError("Could not reach the tracking service. Check your connection and try again.");
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new IncidentApiError(`The tracking service returned an unreadable response (HTTP ${response.status}).`);
+  }
+  if (!response.ok || body?.success !== true) {
+    throw new IncidentApiError(body?.message || `Tracking failed (HTTP ${response.status}).`);
+  }
+  return body.data;
 }

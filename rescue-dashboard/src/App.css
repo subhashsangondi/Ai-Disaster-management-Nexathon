@@ -348,6 +348,22 @@ h1 {
   color: #1e40af;
 }
 
+.provider-badge {
+  display: inline-block;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 4px 8px;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.provider-badge.fallback {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .human-review p {
   margin: 0;
 }
@@ -391,6 +407,17 @@ h1 {
 .incident-title-line h3 {
   margin: 0;
   font-size: 13px;
+}
+
+.linked-badge {
+  border-radius: 999px;
+  background: #ede9fe;
+  padding: 4px 7px;
+  color: #6d28d9;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .25px;
+  text-transform: uppercase;
 }
 
 .urgency,
@@ -529,9 +556,220 @@ h1 {
 .secondary-button:focus-visible,
 .text-button:focus-visible,
 select:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible {
   outline: 3px solid #93c5fd;
   outline-offset: 2px;
+}
+
+.responder-page {
+  min-height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  background: #f4f7fb;
+}
+
+.responder-header,
+.mission-heading,
+.notification-card,
+.responder-header-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.responder-header {
+  margin-bottom: 22px;
+}
+
+.responder-header h1,
+.mission-heading h2 {
+  margin: 4px 0;
+  color: #172033;
+}
+
+.responder-header p,
+.mission-heading p,
+.notification-card p,
+.notification-card small {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.responder-section,
+.mission-card {
+  margin-bottom: 20px;
+  border: 1px solid #e7ecf3;
+  border-radius: 14px;
+  background: #fff;
+  padding: 20px;
+}
+
+.notification-card {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.notification-card.unread {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 #2563eb;
+}
+
+.mission-card {
+  margin-top: 14px;
+  background: #fff;
+}
+
+.mission-description {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.mission-actions,
+.review-actions {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.mission-actions label,
+.review-actions label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mission-actions textarea,
+.mission-actions input,
+.review-actions textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px;
+  color: #172033;
+  font: inherit;
+}
+
+.timeline {
+  margin-top: 18px;
+}
+
+.timeline h3 {
+  color: #172033;
+  font-size: 14px;
+}
+
+.timeline-event {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.timeline-event > span {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+
+.timeline-event strong,
+.timeline-event small {
+  display: block;
+  text-transform: capitalize;
+}
+
+.timeline-event small,
+.timeline-event p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.completion-review > p {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.duplicate-list,
+.linked-incidents {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.duplicate-card,
+.linked-incident {
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.duplicate-card-heading,
+.linked-incident,
+.duplicate-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.duplicate-card-heading > div,
+.linked-incident > div {
+  display: grid;
+  gap: 5px;
+}
+
+.duplicate-card > p {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.duplicate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.duplicate-review-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.duplicate-review-controls > label:not(.review-check) {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.duplicate-review-controls select,
+.duplicate-review-controls textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 11px;
+  color: #172033;
+  font: inherit;
+}
+
+.linked-incident small {
+  color: #64748b;
+  font-size: 11px;
 }
 
 .incident-description {
@@ -785,12 +1023,19 @@ input:focus-visible {
 }
 
 .team-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
   border: 1px solid #e7ecf3;
   border-radius: 9px;
   padding: 14px;
+}
+
+.team-card-heading,
+.recommendation-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .team-card strong {
@@ -802,6 +1047,162 @@ input:focus-visible {
   color: #718096;
   font-size: 11px;
   text-transform: capitalize;
+}
+
+.team-card .team-location,
+.team-card .team-contact {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+  text-transform: none;
+}
+
+.capability-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capability-badges span {
+  border-radius: 999px;
+  background: #e0f2fe;
+  padding: 4px 8px;
+  color: #075985;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.capability-badges .unknown-capability {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.team-alert {
+  margin-bottom: 14px;
+}
+
+.team-panel-heading {
+  align-items: flex-start;
+}
+
+.team-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.team-form {
+  display: grid;
+  gap: 15px;
+  margin-bottom: 22px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 18px;
+  scroll-margin-top: 16px;
+  animation: team-form-expand 180ms ease-out;
+}
+
+@keyframes team-form-expand {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.team-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.team-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-form-grid input,
+.team-form-grid select {
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 11px;
+  color: #172033;
+  font: inherit;
+}
+
+.team-form-grid label small {
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+.team-contact-field {
+  grid-column: 1 / -1;
+}
+
+.team-location-picker {
+  display: grid;
+  gap: 7px;
+}
+
+.team-map.leaflet-container {
+  width: 100%;
+  height: 230px;
+  border-radius: 10px;
+  z-index: 0;
+}
+
+.recommendation-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.recommendation-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 13px;
+}
+
+.recommendation-card.selected {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.recommendation-rank {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #172033;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recommendation-content {
+  display: grid;
+  gap: 7px;
+}
+
+.recommendation-content p,
+.recommendation-content small {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .team-state {
@@ -990,12 +1391,49 @@ input:focus-visible {
 
   .detail-grid,
   .analysis-grid,
-  .team-grid {
+  .team-grid,
+  .team-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .team-contact-field {
+    grid-column: auto;
+  }
+
+  .recommendation-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .recommendation-card > button {
+    grid-column: 1 / -1;
+  }
+
+  .team-panel-heading,
+  .team-heading-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .team-heading-actions .incident-count {
+    align-self: flex-start;
   }
 
   .detail-section-heading {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .responder-page {
+    padding: 15px;
+  }
+
+  .responder-header,
+  .mission-heading,
+  .notification-card,
+  .duplicate-card-heading,
+  .linked-incident,
+  .duplicate-actions {
     flex-direction: column;
   }
 }

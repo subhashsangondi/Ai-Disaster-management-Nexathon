@@ -32,12 +32,20 @@ describe('idempotent SOS persistence', () => {
       location_text: report.location_text,
       status: 'pending',
     };
-    const query = vi.spyOn(db, 'query').mockResolvedValue({ rows: [inserted] });
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [inserted] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    };
+    vi.spyOn(db.pool, 'connect').mockResolvedValue(client);
 
     await expect(incidentRepository.createIncident(report)).resolves.toEqual(inserted);
-    expect(query).toHaveBeenCalledOnce();
-    expect(query.mock.calls[0][0]).toContain('ON CONFLICT (id) DO NOTHING');
-    expect(query.mock.calls[0][1][0]).toBe(id);
+    expect(client.query).toHaveBeenCalledTimes(3);
+    expect(client.query.mock.calls[1][0]).toContain('ON CONFLICT (id) DO NOTHING');
+    expect(client.query.mock.calls[1][1][0]).toBe(id);
+    expect(client.release).toHaveBeenCalledOnce();
   });
 
   it('returns the existing report for an identical retry', async () => {
@@ -51,12 +59,20 @@ describe('idempotent SOS persistence', () => {
       location_text: report.location_text,
       status: 'pending',
     };
-    const query = vi.spyOn(db, 'query')
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [existing] });
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [existing] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    };
+    vi.spyOn(db.pool, 'connect').mockResolvedValue(client);
 
     await expect(incidentRepository.createIncident(report)).resolves.toEqual(existing);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(client.query).toHaveBeenCalledTimes(4);
+    expect(client.query.mock.calls[2][0]).toContain('FOR UPDATE');
+    expect(client.release).toHaveBeenCalledOnce();
   });
 
   it('rejects reuse of an ID for a different report', async () => {
@@ -69,13 +85,21 @@ describe('idempotent SOS persistence', () => {
       longitude: report.longitude,
       location_text: report.location_text,
     };
-    vi.spyOn(db, 'query')
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [existing] });
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [existing] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    };
+    vi.spyOn(db.pool, 'connect').mockResolvedValue(client);
 
     await expect(incidentRepository.createIncident(report)).rejects.toMatchObject({
       statusCode: 409,
       message: 'Idempotency key was already used for a different SOS report',
     });
+    expect(client.query.mock.calls[3][0]).toBe('ROLLBACK');
+    expect(client.release).toHaveBeenCalledOnce();
   });
 });

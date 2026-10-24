@@ -2,7 +2,7 @@ const clientEnv = import.meta.env ?? {};
 const API_BASE_URL = (clientEnv.VITE_API_BASE_URL || "http://localhost:4000").replace(/\/+$/, "");
 const configuredTimeout = Number(clientEnv.VITE_API_TIMEOUT_MS);
 const API_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 65000;
-const SESSION_KEY = "rescuegrid.operator.session";
+const SESSION_KEY = "rescuegrid.dashboard.session";
 
 export class ApiError extends Error {
   constructor(message, status = 0, errors = undefined) {
@@ -103,9 +103,47 @@ export async function getIncidentAnalysis(token, incidentId) {
   return response.data;
 }
 
-export async function listTeams(token) {
-  const response = await apiRequest("/api/teams", { token });
+export async function getIncidentDuplicates(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/duplicates`, { token });
+  return response.data;
+}
+
+export async function reviewIncidentDuplicate(token, incidentId, duplicateIncidentId, review) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/duplicates/${encodeURIComponent(duplicateIncidentId)}/review`, {
+    method: "POST",
+    token,
+    body: review,
+  });
+  return { ...response.data, message: response.message };
+}
+
+export async function listTeams(token, filters = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  }
+  const response = await apiRequest(`/api/teams${query.size ? `?${query}` : ""}`, { token });
   return response.data.teams;
+}
+
+export async function getTeam(token, teamId) {
+  const response = await apiRequest(`/api/teams/${encodeURIComponent(teamId)}`, { token });
+  return response.data;
+}
+
+export async function createTeam(token, team) {
+  const response = await apiRequest("/api/teams", { method: "POST", token, body: team });
+  return { team: response.data, message: response.message };
+}
+
+export async function updateTeam(token, teamId, team) {
+  const response = await apiRequest(`/api/teams/${encodeURIComponent(teamId)}`, { method: "PATCH", token, body: team });
+  return { team: response.data, message: response.message };
+}
+
+export async function getTeamRecommendations(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/team-recommendations`, { token });
+  return response.data;
 }
 
 export async function assignTeam(token, incidentId, teamId) {
@@ -131,11 +169,71 @@ export async function getDashboardStats(token) {
   return response.data;
 }
 
+export async function getIncidentProgress(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/progress`, { token });
+  return response.data.events;
+}
+
+export async function getIncidentCompletion(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/completion`, { token });
+  return response.data;
+}
+
+export async function reviewCompletion(token, incidentId, decision, reason = "") {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/completion/${decision}`, {
+    method: "POST",
+    token,
+    ...(decision === "reject" ? { body: { reason } } : {}),
+  });
+  return { ...response.data, message: response.message };
+}
+
+export async function listResponderAssignments(token) {
+  const response = await apiRequest("/api/responder/assignments", { token });
+  return response.data.assignments;
+}
+
+export async function listResponderNotifications(token) {
+  const response = await apiRequest("/api/responder/notifications", { token });
+  return response.data.notifications;
+}
+
+export async function markResponderNotificationRead(token, notificationId) {
+  const response = await apiRequest(`/api/responder/notifications/${encodeURIComponent(notificationId)}/read`, { method: "PATCH", token });
+  return response.data;
+}
+
+export async function acknowledgeResponderAssignment(token, assignmentId) {
+  const response = await apiRequest(`/api/responder/assignments/${encodeURIComponent(assignmentId)}/acknowledge`, { method: "POST", token });
+  return { ...response.data, message: response.message };
+}
+
+export async function submitResponderProgress(token, assignmentId, progressStatus, notes) {
+  const response = await apiRequest(`/api/responder/assignments/${encodeURIComponent(assignmentId)}/progress`, {
+    method: "POST",
+    token,
+    body: { progress_status: progressStatus, ...(notes.trim() ? { notes: notes.trim() } : {}) },
+  });
+  return { ...response.data, message: response.message };
+}
+
+export async function submitResponderCompletion(token, assignmentId, summary, peopleAssisted) {
+  const response = await apiRequest(`/api/responder/assignments/${encodeURIComponent(assignmentId)}/completion`, {
+    method: "POST",
+    token,
+    body: {
+      completion_summary: summary.trim(),
+      people_assisted: peopleAssisted === "" ? null : Number(peopleAssisted),
+    },
+  });
+  return { ...response.data, message: response.message };
+}
+
 export function readOperatorSession() {
   if (typeof sessionStorage === "undefined") return null;
   try {
     const session = JSON.parse(sessionStorage.getItem(SESSION_KEY));
-    if (!session?.token || !["operator", "admin"].includes(session?.user?.role)) return null;
+    if (!session?.token || !["operator", "admin", "responder"].includes(session?.user?.role)) return null;
     return session;
   } catch {
     return null;

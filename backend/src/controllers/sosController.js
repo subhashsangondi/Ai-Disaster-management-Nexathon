@@ -1,11 +1,14 @@
 const incidentRepository = require('../repositories/incidentRepository');
+const trackingService = require('../services/trackingService');
 const { success } = require('../utils/apiResponse');
 
 async function createSos(req, res) {
+  const tracking = trackingService.createTrackingCredential();
   const incident = await incidentRepository.createIncident({
     ...req.body,
     idempotency_key: req.get('Idempotency-Key'),
     reporter_id: req.user?.user_id || null,
+    tracking_token_hash: tracking.tokenHash,
   });
 
   return success(res, {
@@ -13,6 +16,7 @@ async function createSos(req, res) {
     message: 'Emergency report received by RescueGrid AI',
     data: {
       incident_id: incident.id,
+      tracking_token: tracking.token,
       status: incident.status,
       analysis_status: 'pending',
       notice: 'This report is stored in RescueGrid AI and is not confirmation of delivery to official emergency services.',

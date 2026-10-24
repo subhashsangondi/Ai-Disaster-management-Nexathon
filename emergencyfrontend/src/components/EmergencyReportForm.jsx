@@ -213,6 +213,14 @@ export default function EmergencyReportForm({ onProgressChange }) {
           </div>
         </div>
 
+        {result.trackingToken && (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-800">Private tracking token — shown once</p>
+            <p className="mt-2 break-all font-mono text-sm font-semibold text-slate-900">{result.trackingToken}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-600">Save this token securely. It is required to reopen status tracking; the incident ID alone cannot access it.</p>
+          </div>
+        )}
+
         {mapLinks.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
             {mapLinks.map((link) => (
