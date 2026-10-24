@@ -9,6 +9,7 @@ const {
   statusSchema,
 } = require('../validators/incidentValidator');
 const { rejectionSchema } = require('../validators/responseValidator');
+const { duplicateParamsSchema, duplicateReviewSchema } = require('../validators/duplicateValidator');
 
 const router = express.Router();
 router.use(authenticate, authorize('operator', 'admin'));
@@ -17,6 +18,13 @@ router.get('/', validateRequest(incidentFiltersSchema, 'query'), controller.list
 router.get('/:id', validateRequest(uuidParamsSchema, 'params'), controller.getIncident);
 router.post('/:id/analyze', validateRequest(uuidParamsSchema, 'params'), controller.analyze);
 router.get('/:id/analysis', validateRequest(uuidParamsSchema, 'params'), controller.getAnalysis);
+router.get('/:id/duplicates', validateRequest(uuidParamsSchema, 'params'), controller.getDuplicates);
+router.post(
+  '/:id/duplicates/:duplicateId/review',
+  validateRequest(duplicateParamsSchema, 'params'),
+  validateRequest(duplicateReviewSchema),
+  controller.reviewDuplicate,
+);
 router.get('/:id/progress', validateRequest(uuidParamsSchema, 'params'), controller.getProgress);
 router.get('/:id/completion', validateRequest(uuidParamsSchema, 'params'), controller.getCompletion);
 router.post(

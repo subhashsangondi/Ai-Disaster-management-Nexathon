@@ -78,11 +78,26 @@ async function listIncidents({ status, urgency, emergency_type, page, limit }) {
            'requires_review', latest_analysis.requires_review,
            'analyzed_at', latest_analysis.analyzed_at
          ) END AS latest_analysis
+       ,CASE
+          WHEN duplicate_link.id IS NOT NULL THEN 'duplicate'
+          WHEN primary_links.linked_count > 0 THEN 'primary'
+          ELSE 'independent'
+        END AS duplicate_role,
+       duplicate_link.primary_incident_id,
+       COALESCE(primary_links.linked_count, 0)::int AS linked_incident_count,
+       duplicate_link.resolution_verified_at AS linked_resolution_verified_at
      FROM incidents i
      LEFT JOIN LATERAL (
        SELECT * FROM ai_analyses a
        WHERE a.incident_id = i.id ORDER BY a.analyzed_at DESC LIMIT 1
      ) latest_analysis ON true
+     LEFT JOIN incident_duplicate_links duplicate_link
+       ON duplicate_link.duplicate_incident_id = i.id
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*)::int AS linked_count
+       FROM incident_duplicate_links link_count
+       WHERE link_count.primary_incident_id = i.id
+     ) primary_links ON true
      ${where}
      ORDER BY i.created_at DESC
      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -177,15 +192,21 @@ async function findDuplicateCandidates(incident, lookbackHours) {
 }
 
 async function savePossibleDuplicates(incidentId, candidates) {
+  const saved = [];
   for (const candidate of candidates) {
-    await db.query(
-      `INSERT INTO possible_duplicates (incident_id, possible_duplicate_id, similarity_score)
-       VALUES ($1, $2, $3)
+    const result = await db.query(
+      `INSERT INTO possible_duplicates
+         (incident_id, possible_duplicate_id, similarity_score, distance_km)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (incident_id, possible_duplicate_id)
-       DO UPDATE SET similarity_score = EXCLUDED.similarity_score, created_at = CURRENT_TIMESTAMP`,
-      [incidentId, candidate.incident_id, candidate.similarity_score],
+       DO UPDATE SET similarity_score = EXCLUDED.similarity_score,
+         distance_km = EXCLUDED.distance_km, created_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [incidentId, candidate.incident_id, candidate.similarity_score, candidate.distance_km],
     );
+    saved.push({ ...candidate, match_id: result.rows[0].id });
   }
+  return saved;
 }
 
 async function getDashboardStats() {

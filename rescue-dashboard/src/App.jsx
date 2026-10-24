@@ -10,6 +10,7 @@ import {
   getDashboardStats,
   getIncident,
   getIncidentAnalysis,
+  getIncidentDuplicates,
   getIncidentCompletion,
   getIncidentProgress,
   incidentPollMs,
@@ -26,6 +27,7 @@ import {
   submitResponderProgress,
   updateIncidentStatus,
   reviewCompletion,
+  reviewIncidentDuplicate,
 } from "./services/api.js";
 
 const STATUS_LABELS = {
@@ -331,13 +333,75 @@ function AnalysisPanel({ incident, analysisResult, isAnalyzing, onAnalyze, onSel
   );
 }
 
-function IncidentDetail({ incident, teams, analysisResult, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onSelectIncident }) {
+function DuplicateCandidateCard({ incident, candidate, isLinked, busyAction, onReview, onSelectIncident }) {
+  const candidateHasAssignment = Boolean(candidate.assigned_team_id);
+  const incidentHasAssignment = Boolean(incident.assigned_team_id);
+  const bothAssigned = candidateHasAssignment && incidentHasAssignment;
+  const [primaryId, setPrimaryId] = useState(candidateHasAssignment && !incidentHasAssignment ? candidate.incident_id : incident.id);
+  const [reason, setReason] = useState("");
+  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
+
+  return (
+    <article className="duplicate-card">
+      <div className="duplicate-card-heading">
+        <div>
+          <button type="button" className="link-button" onClick={() => onSelectIncident(candidate.incident_id)}>{candidate.incident_id}</button>
+          <strong>{candidate.emergency_type}</strong>
+        </div>
+        <span className="incident-count">{Math.round(candidate.similarity_score * 100)}% match</span>
+      </div>
+      <p>{candidate.description}</p>
+      <div className="duplicate-meta"><span>Status: {statusLabel(candidate.status)}</span><span>{candidate.distance_km == null ? "Distance unavailable" : `${candidate.distance_km} km away`}</span><span>{candidateHasAssignment ? "Assigned" : "Unassigned"}</span></div>
+      {candidate.review_decision && <div className={`alert ${candidate.review_decision === "confirmed" ? "success" : "info"}`}>Latest operator review: {candidate.review_decision}{candidate.review_reason ? ` — ${candidate.review_reason}` : ""}</div>}
+      {isLinked ? <div className="alert success">This incident pair is already linked.</div> : (
+        <div className="duplicate-review-controls">
+          <label htmlFor={`primary-${candidate.incident_id}`}>Primary incident if confirmed</label>
+          <select id={`primary-${candidate.incident_id}`} value={primaryId} onChange={(event) => setPrimaryId(event.target.value)}>
+            <option value={incident.id}>Current incident: {incident.id}</option>
+            <option value={candidate.incident_id}>Candidate: {candidate.incident_id}</option>
+          </select>
+          <label htmlFor={`duplicate-reason-${candidate.incident_id}`}>Operator review note</label>
+          <textarea id={`duplicate-reason-${candidate.incident_id}`} rows="2" maxLength="2000" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why these reports are or are not the same event" />
+          {bothAssigned && <label className="review-check"><input type="checkbox" checked={conflictAcknowledged} onChange={(event) => setConflictAcknowledged(event.target.checked)} /> Both incidents already have assignments. Preserve both assignments and flag this conflict for explicit operator handling.</label>}
+          <div className="duplicate-actions">
+            <button className="primary-button" type="button" disabled={Boolean(busyAction) || (bothAssigned && !conflictAcknowledged)} onClick={() => onReview(candidate.incident_id, { decision: "confirmed", primary_incident_id: primaryId, ...(reason.trim().length >= 5 ? { reason: reason.trim() } : {}), assignment_conflict_acknowledged: conflictAcknowledged })}>Confirm and link</button>
+            <button className="secondary-button" type="button" disabled={Boolean(busyAction) || reason.trim().length < 5} onClick={() => onReview(candidate.incident_id, { decision: "rejected", reason: reason.trim(), assignment_conflict_acknowledged: false })}>Reject match</button>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function DuplicateReviewPanel({ incident, duplicateData, busyAction, onReview, onSelectIncident }) {
+  const links = duplicateData?.links || [];
+  const candidates = duplicateData?.candidates || [];
+  const linkedIncidentIds = new Set(links.flatMap((link) => [link.primary_incident_id, link.duplicate_incident_id]));
+  const isLinkedDuplicate = duplicateData?.role === "duplicate";
+  return (
+    <section className="detail-section" aria-labelledby="duplicate-review-title">
+      <div className="detail-section-heading"><div><p className="eyebrow">OPERATOR REVIEW REQUIRED</p><h3 id="duplicate-review-title">Duplicate incident review</h3></div></div>
+      <div className="human-review"><span>REVIEW</span><p>Similarity and distance are advisory. Reports remain separate unless an operator confirms and links them.</p></div>
+      {links.length > 0 && <div className="linked-incidents"><h4>Linked incidents</h4>{links.map((link) => {
+        const currentIsPrimary = link.primary_incident_id === incident.id;
+        const relatedId = currentIsPrimary ? link.duplicate_incident_id : link.primary_incident_id;
+        const relatedStatus = currentIsPrimary ? link.duplicate_status : link.primary_status;
+        return <article className="linked-incident" key={link.id}><div><strong>{currentIsPrimary ? "Linked duplicate" : "Primary incident"}</strong><button type="button" className="link-button" onClick={() => onSelectIncident(relatedId)}>{relatedId}</button><small>Status: {statusLabel(relatedStatus)} · Linked {formatDate(link.linked_at)}</small>{link.assignment_conflict_acknowledged && <small>Dual assignments preserved after explicit operator acknowledgment.</small>}</div><span className={`status ${link.resolution_verified_at ? "resolved" : "assigned"}`}>{link.resolution_verified_at ? "Verified resolved" : "Linked"}</span></article>;
+      })}</div>}
+      {isLinkedDuplicate && <div className="alert info">This report is handled through its primary incident. A new rescue assignment cannot be created here.</div>}
+      {candidates.length === 0 ? <div className="empty-state compact">No stored AI duplicate candidates are available for operator review.</div> : <div className="duplicate-list">{candidates.map((candidate) => <DuplicateCandidateCard key={candidate.incident_id} incident={incident} candidate={candidate} isLinked={linkedIncidentIds.has(candidate.incident_id) && linkedIncidentIds.has(incident.id)} busyAction={busyAction} onReview={onReview} onSelectIncident={onSelectIncident} />)}</div>}
+    </section>
+  );
+}
+
+function IncidentDetail({ incident, teams, analysisResult, duplicateData, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onReviewDuplicate, onSelectIncident }) {
   const [teamId, setTeamId] = useState("");
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const availableTeams = teams.filter((team) => team.availability === "available");
   const nextStatus = incident.status === "assigned" ? "in_progress" : null;
   const latestCompletion = completionData?.reports?.[0];
+  const isLinkedDuplicate = duplicateData?.role === "duplicate";
 
   return (
     <section className="panel detail-panel" id={`incident-${incident.id}`} aria-labelledby="detail-title">
@@ -362,9 +426,11 @@ function IncidentDetail({ incident, teams, analysisResult, progressEvents, compl
 
       <AnalysisPanel incident={incident} analysisResult={analysisResult} isAnalyzing={busyAction === "analyze"} onAnalyze={onAnalyze} onSelectIncident={onSelectIncident} />
 
+      <DuplicateReviewPanel incident={incident} duplicateData={duplicateData} busyAction={busyAction} onReview={onReviewDuplicate} onSelectIncident={onSelectIncident} />
+
       <section className="detail-section" aria-labelledby="response-title">
         <div className="detail-section-heading"><div><p className="eyebrow">HUMAN DECISION</p><h3 id="response-title">Response management</h3></div></div>
-        {incident.status === "pending" && (
+        {incident.status === "pending" && !isLinkedDuplicate && (
           <div className="assignment-controls">
             <label className="review-check"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} /> I reviewed the incident report and any AI recommendation.</label>
             <label htmlFor="team-select">Available rescue team</label>
@@ -405,6 +471,7 @@ function Dashboard({ session, onLogout }) {
   const [selectedId, setSelectedId] = useState("");
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [duplicateData, setDuplicateData] = useState({ role: "independent", candidates: [], links: [] });
   const [progressEvents, setProgressEvents] = useState([]);
   const [completionData, setCompletionData] = useState({ reports: [], evidence_photos_supported: false });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -464,14 +531,16 @@ function Dashboard({ session, onLogout }) {
     setIsDetailLoading(true);
     setActionError("");
     try {
-      const [incident, nextProgressEvents, nextCompletionData] = await Promise.all([
+      const [incident, nextProgressEvents, nextCompletionData, nextDuplicateData] = await Promise.all([
         getIncident(session.token, incidentId),
         getIncidentProgress(session.token, incidentId),
         getIncidentCompletion(session.token, incidentId),
+        getIncidentDuplicates(session.token, incidentId),
       ]);
       setSelectedIncident(incident);
       setProgressEvents(nextProgressEvents);
       setCompletionData(nextCompletionData);
+      setDuplicateData(nextDuplicateData);
       setAnalysisResult(null);
       if (incident.latest_analysis) {
         const analysis = await getIncidentAnalysis(session.token, incidentId);
@@ -532,6 +601,10 @@ function Dashboard({ session, onLogout }) {
     await runAction(`completion-${decision}`, () => reviewCompletion(session.token, selectedId, decision, reason), decision === "approve" ? "Completion approved." : "Completion rejected.");
   }
 
+  async function handleReviewDuplicate(duplicateIncidentId, review) {
+    await runAction("duplicate-review", () => reviewIncidentDuplicate(session.token, selectedId, duplicateIncidentId, review), review.decision === "confirmed" ? "Duplicate incidents linked." : "Potential duplicate rejected.");
+  }
+
   const summary = [
     { label: "Total Incidents", value: stats?.total_incidents ?? 0, caption: "Stored reports" },
     { label: "Critical Cases", value: stats?.critical_recommendations ?? 0, caption: "AI recommendations" },
@@ -570,11 +643,11 @@ function Dashboard({ session, onLogout }) {
 
         <section id="incidents" className="panel incidents-panel">
           <div className="panel-heading"><div><h2>Recent Incidents</h2><p>Automatically refreshed from PostgreSQL through the API.</p></div><span className="incident-count">{incidents.length} shown</span></div>
-          {incidents.length === 0 ? <div className="empty-state">No incidents have been reported.</div> : <div className="incident-list">{incidents.map((incident) => { const urgency = urgencyFor(incident); return <article className={`incident-row ${selectedId === incident.id ? "selected" : ""}`} key={incident.id}><button type="button" className="incident-select" onClick={() => selectIncident(incident.id)}><span className="incident-symbol">!</span><span className="incident-details"><span className="incident-title-line"><strong>{incident.emergency_type}</strong><span className={`urgency ${urgency}`}>{urgency}</span></span><span className="incident-description">{incident.description}</span><span className="incident-location">{incident.location_text || (hasCoordinates(incident) ? `${incident.latitude}, ${incident.longitude}` : "Location unavailable")}</span></span><span className={`status ${incident.status.replaceAll("_", "-")}`}>{statusLabel(incident.status)}</span></button></article>; })}</div>}
+          {incidents.length === 0 ? <div className="empty-state">No incidents have been reported.</div> : <div className="incident-list">{incidents.map((incident) => { const urgency = urgencyFor(incident); return <article className={`incident-row ${selectedId === incident.id ? "selected" : ""}`} key={incident.id}><button type="button" className="incident-select" onClick={() => selectIncident(incident.id)}><span className="incident-symbol">!</span><span className="incident-details"><span className="incident-title-line"><strong>{incident.emergency_type}</strong><span className={`urgency ${urgency}`}>{urgency}</span>{incident.duplicate_role === "duplicate" && <span className="linked-badge">Linked duplicate</span>}{incident.duplicate_role === "primary" && <span className="linked-badge">Primary · {incident.linked_incident_count} linked</span>}</span><span className="incident-description">{incident.description}</span><span className="incident-location">{incident.location_text || (hasCoordinates(incident) ? `${incident.latitude}, ${incident.longitude}` : "Location unavailable")}</span></span><span className={`status ${incident.linked_resolution_verified_at ? "resolved" : incident.status.replaceAll("_", "-")}`}>{incident.linked_resolution_verified_at ? "Verified Resolved" : statusLabel(incident.status)}</span></button></article>; })}</div>}
         </section>
 
         {isDetailLoading && <section className="panel detail-panel"><div className="empty-state">Loading incident details...</div></section>}
-        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onSelectIncident={selectIncident} />}
+        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} duplicateData={duplicateData} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onReviewDuplicate={handleReviewDuplicate} onSelectIncident={selectIncident} />}
 
         <section id="teams" className="panel teams-panel"><div className="panel-heading"><div><h2>Rescue Teams</h2><p>Current availability from the backend.</p></div><span className="incident-count">{teams.length} teams</span></div>{teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => <article className="team-card" key={team.id}><span className={`team-state ${team.availability}`} /> <div><strong>{team.team_name}</strong><p>{team.availability}</p></div></article>)}</div>}</section>
         <footer className="footer"><span>RescueGrid AI — Rescue Coordination Platform</span><span>Live backend data · Human review required</span></footer>

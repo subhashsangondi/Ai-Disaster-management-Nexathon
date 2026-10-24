@@ -9,6 +9,7 @@ import {
   getIncidentAnalysis,
   getIncidentCompletion,
   getIncidentProgress,
+  getIncidentDuplicates,
   listIncidents,
   listTeams,
   listResponderAssignments,
@@ -19,6 +20,7 @@ import {
   submitResponderProgress,
   submitResponderCompletion,
   reviewCompletion,
+  reviewIncidentDuplicate,
 } from "../src/services/api.js";
 
 const originalFetch = globalThis.fetch;
@@ -126,4 +128,30 @@ test("operator response review APIs parse histories and enforce rejection reason
   assert.equal((await getIncidentCompletion("jwt", "incident-1")).reports[0].review_status, "pending");
   await reviewCompletion("jwt", "incident-1", "reject", "Summary needs more detail");
   assert.deepEqual(JSON.parse(requests[2].options.body), { reason: "Summary needs more detail" });
+});
+
+test("operator duplicate review APIs load links and send explicit review decisions", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (options.method === "GET") return response({ success: true, data: { role: "independent", candidates: [{ incident_id: "incident-2" }], links: [] } });
+    return response({ success: true, message: "Duplicate incidents linked after operator review", data: { link: { duplicate_incident_id: "incident-2" } } });
+  };
+
+  const duplicates = await getIncidentDuplicates("jwt", "incident-1");
+  assert.equal(duplicates.candidates[0].incident_id, "incident-2");
+  await reviewIncidentDuplicate("jwt", "incident-1", "incident-2", {
+    decision: "confirmed",
+    primary_incident_id: "incident-1",
+    assignment_conflict_acknowledged: true,
+  });
+
+  assert.equal(requests[0].url, "http://localhost:4000/api/incidents/incident-1/duplicates");
+  assert.equal(requests[1].options.method, "POST");
+  assert.deepEqual(JSON.parse(requests[1].options.body), {
+    decision: "confirmed",
+    primary_incident_id: "incident-1",
+    assignment_conflict_acknowledged: true,
+  });
+  assert.equal(requests[1].options.headers.Authorization, "Bearer jwt");
 });

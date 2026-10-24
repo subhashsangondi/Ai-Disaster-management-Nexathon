@@ -15,6 +15,24 @@ async function assignTeam({ incidentId, teamId, assignedBy }, database = db) {
       throw new AppError(409, 'Incident already has an assignment or is not pending');
     }
 
+    const duplicateLinkResult = await client.query(
+      `SELECT link.primary_incident_id, link.duplicate_incident_id,
+              EXISTS (
+                SELECT 1 FROM incident_assignments linked_assignment
+                WHERE linked_assignment.incident_id = link.duplicate_incident_id
+              ) AS duplicate_has_assignment
+       FROM incident_duplicate_links link
+       WHERE link.primary_incident_id = $1 OR link.duplicate_incident_id = $1
+       FOR SHARE OF link`,
+      [incidentId],
+    );
+    if (duplicateLinkResult.rows.some((link) => link.duplicate_incident_id === incidentId)) {
+      throw new AppError(409, 'Linked duplicate incidents are handled through their primary incident and cannot receive a new assignment');
+    }
+    if (duplicateLinkResult.rows.some((link) => link.duplicate_has_assignment)) {
+      throw new AppError(409, 'A linked incident already has an assignment; operator conflict handling is required');
+    }
+
     const teamResult = await client.query(
       'SELECT id, team_name, availability FROM rescue_teams WHERE id = $1 FOR UPDATE',
       [teamId],

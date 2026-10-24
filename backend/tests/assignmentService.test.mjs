@@ -20,6 +20,7 @@ describe('transactional team assignment', () => {
     const { database, client } = fakeDatabase([
       {},
       { rows: [{ id: incidentId, status: 'pending', assigned_team_id: null }] },
+      { rows: [] },
       { rows: [{ id: teamId, team_name: 'Alpha', availability: 'available' }] },
       { rows: [{ id: '40000000-0000-4000-8000-000000000001', incident_id: incidentId, team_id: teamId }] },
       { rows: [{ id: '60000000-0000-4000-8000-000000000001', assignment_id: '40000000-0000-4000-8000-000000000001' }] },
@@ -44,6 +45,30 @@ describe('transactional team assignment', () => {
     ]);
     await expect(assignTeam({ incidentId, teamId, assignedBy: operatorId }, database))
       .rejects.toMatchObject({ statusCode: 409 });
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('blocks a new assignment on a linked duplicate', async () => {
+    const { database, client } = fakeDatabase([
+      {},
+      { rows: [{ id: incidentId, status: 'pending', assigned_team_id: null }] },
+      { rows: [{ primary_incident_id: '30000000-0000-4000-8000-000000000002', duplicate_incident_id: incidentId, duplicate_has_assignment: false }] },
+      {},
+    ]);
+    await expect(assignTeam({ incidentId, teamId, assignedBy: operatorId }, database))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/linked duplicate/i) });
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('blocks a primary assignment when a linked incident already has one', async () => {
+    const { database, client } = fakeDatabase([
+      {},
+      { rows: [{ id: incidentId, status: 'pending', assigned_team_id: null }] },
+      { rows: [{ primary_incident_id: incidentId, duplicate_incident_id: '30000000-0000-4000-8000-000000000002', duplicate_has_assignment: true }] },
+      {},
+    ]);
+    await expect(assignTeam({ incidentId, teamId, assignedBy: operatorId }, database))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/linked incident already has an assignment/i) });
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
   });
 });

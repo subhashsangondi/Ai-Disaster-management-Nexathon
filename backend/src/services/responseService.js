@@ -283,6 +283,12 @@ async function reviewCompletion({ incidentId, operatorId, decision, reason = nul
         [incidentId, operatorId],
       );
       await client.query(
+        `UPDATE incident_duplicate_links
+         SET resolution_verified_at = COALESCE(resolution_verified_at, CURRENT_TIMESTAMP)
+         WHERE primary_incident_id = $1`,
+        [incidentId],
+      );
+      await client.query(
         `UPDATE rescue_teams team SET availability = 'available'
          WHERE team.id = $1 AND NOT EXISTS (
            SELECT 1 FROM incidents active

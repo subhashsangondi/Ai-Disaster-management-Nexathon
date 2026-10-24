@@ -393,6 +393,17 @@ h1 {
   font-size: 13px;
 }
 
+.linked-badge {
+  border-radius: 999px;
+  background: #ede9fe;
+  padding: 4px 7px;
+  color: #6d28d9;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .25px;
+  text-transform: uppercase;
+}
+
 .urgency,
 .status {
   border-radius: 6px;
@@ -668,6 +679,80 @@ input:focus-visible {
 .completion-review > p {
   color: #475569;
   line-height: 1.6;
+}
+
+.duplicate-list,
+.linked-incidents {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.duplicate-card,
+.linked-incident {
+  border: 1px solid #dbe3ed;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.duplicate-card-heading,
+.linked-incident,
+.duplicate-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.duplicate-card-heading > div,
+.linked-incident > div {
+  display: grid;
+  gap: 5px;
+}
+
+.duplicate-card > p {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.duplicate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.duplicate-review-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.duplicate-review-controls > label:not(.review-check) {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.duplicate-review-controls select,
+.duplicate-review-controls textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 11px;
+  color: #172033;
+  font: inherit;
+}
+
+.linked-incident small {
+  color: #64748b;
+  font-size: 11px;
 }
 
 .incident-description {
@@ -1141,7 +1226,10 @@ input:focus-visible {
 
   .responder-header,
   .mission-heading,
-  .notification-card {
+  .notification-card,
+  .duplicate-card-heading,
+  .linked-incident,
+  .duplicate-actions {
     flex-direction: column;
   }
 }

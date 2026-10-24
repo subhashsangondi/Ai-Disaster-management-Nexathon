@@ -3,6 +3,7 @@ const aiService = require('../services/aiService');
 const duplicateService = require('../services/duplicateService');
 const assignmentService = require('../services/assignmentService');
 const responseService = require('../services/responseService');
+const duplicateReviewService = require('../services/duplicateReviewService');
 const { AppError, success } = require('../utils/apiResponse');
 
 async function listIncidents(req, res) {
@@ -23,11 +24,13 @@ async function analyze(req, res) {
   const analysis = await aiService.analyzeIncident(incident);
   const storedAnalysis = await incidentRepository.saveAnalysis(incident.id, analysis);
   const duplicates = await duplicateService.findPossibleDuplicates(incident);
-  if (duplicates.length) await incidentRepository.savePossibleDuplicates(incident.id, duplicates);
+  const storedDuplicates = duplicates.length
+    ? await incidentRepository.savePossibleDuplicates(incident.id, duplicates)
+    : [];
 
   return success(res, {
     message: 'Advisory AI analysis completed; human review remains required',
-    data: { analysis: storedAnalysis, possible_duplicates: duplicates },
+    data: { analysis: storedAnalysis, possible_duplicates: storedDuplicates },
   });
 }
 
@@ -88,6 +91,29 @@ async function rejectCompletion(req, res) {
   return success(res, { message: 'Completion rejected; response remains active', data: decision });
 }
 
+async function getDuplicates(req, res) {
+  const duplicates = await duplicateReviewService.listDuplicateMatches(req.params.id);
+  return success(res, { data: duplicates });
+}
+
+async function reviewDuplicate(req, res) {
+  const result = await duplicateReviewService.reviewDuplicate({
+    incidentId: req.params.id,
+    duplicateIncidentId: req.params.duplicateId,
+    decision: req.body.decision,
+    primaryIncidentId: req.body.primary_incident_id,
+    reason: req.body.reason,
+    assignmentConflictAcknowledged: req.body.assignment_conflict_acknowledged,
+    operatorId: req.user.user_id,
+  });
+  return success(res, {
+    message: req.body.decision === 'confirmed'
+      ? 'Duplicate incidents linked after operator review'
+      : 'Potential duplicate rejected by operator',
+    data: result,
+  });
+}
+
 module.exports = {
   listIncidents,
   getIncident,
@@ -99,4 +125,6 @@ module.exports = {
   getCompletion,
   approveCompletion,
   rejectCompletion,
+  getDuplicates,
+  reviewDuplicate,
 };

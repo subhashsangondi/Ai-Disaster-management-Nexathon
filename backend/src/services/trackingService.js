@@ -27,12 +27,26 @@ async function trackIncident(token, database = db) {
   }
   const tokenHash = hashTrackingToken(token);
   const result = await database.query(
-    `UPDATE incident_tracking_tokens tracking
+    `WITH matched AS (
+       SELECT tracking.id AS tracking_id, incident.id, incident.emergency_type,
+              CASE WHEN link.resolution_verified_at IS NOT NULL
+                THEN 'resolved' ELSE incident.status END AS effective_status,
+              incident.created_at,
+              CASE WHEN link.resolution_verified_at IS NOT NULL
+                THEN GREATEST(incident.updated_at, link.resolution_verified_at)
+                ELSE incident.updated_at END AS effective_updated_at
+       FROM incident_tracking_tokens tracking
+       JOIN incidents incident ON incident.id = tracking.incident_id
+       LEFT JOIN incident_duplicate_links link ON link.duplicate_incident_id = incident.id
+       WHERE tracking.token_hash = $1
+     )
+     UPDATE incident_tracking_tokens tracking
      SET last_used_at = CURRENT_TIMESTAMP
-     FROM incidents incident
-     WHERE tracking.token_hash = $1 AND incident.id = tracking.incident_id
-     RETURNING incident.id, incident.emergency_type, incident.status,
-               incident.created_at, incident.updated_at`,
+     FROM matched
+     WHERE tracking.id = matched.tracking_id
+     RETURNING matched.id, matched.emergency_type,
+               matched.effective_status AS status, matched.created_at,
+               matched.effective_updated_at AS updated_at`,
     [tokenHash],
   );
   const incident = result.rows[0];

@@ -119,10 +119,12 @@ describe('completion reporting and review', () => {
       {},
       {},
       {},
+      {},
     ]);
     const decision = await responseService.reviewCompletion({ incidentId, operatorId, decision: 'approved' }, database);
     expect(decision.incident_status).toBe('resolved');
     expect(client.query.mock.calls.some(([sql]) => sql.includes("SET status = 'resolved'"))).toBe(true);
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('UPDATE incident_duplicate_links'))).toBe(true);
     expect(client.query.mock.calls.some(([sql]) => sql.includes('NOT EXISTS'))).toBe(true);
     expect(client.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO audit_events'))).toBe(true);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -179,5 +181,29 @@ describe('secure victim tracking', () => {
     expect(response.body.data.location_text).toBeUndefined();
     expect(response.body.data.operator).toBeUndefined();
     expect(response.body.data.progress_messages).toHaveLength(1);
+  });
+
+  it('uses a verified duplicate-link outcome without exposing the primary incident', async () => {
+    const database = {
+      query: vi.fn().mockResolvedValue({ rows: [{
+        id: incidentId,
+        emergency_type: 'flood',
+        status: 'resolved',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T01:00:00Z',
+      }] }),
+    };
+    const tracked = await trackingService.trackIncident('x'.repeat(43), database);
+    expect(tracked).toEqual({
+      incident_reference: incidentId,
+      emergency_type: 'flood',
+      status: 'resolved',
+      submitted_at: '2026-01-01T00:00:00Z',
+      last_updated_at: '2026-01-01T01:00:00Z',
+      progress_messages: ['The rescue response has been verified as completed.'],
+    });
+    expect(database.query.mock.calls[0][0]).toContain('LEFT JOIN incident_duplicate_links');
+    expect(tracked.primary_incident_id).toBeUndefined();
+    expect(tracked.location_text).toBeUndefined();
   });
 });

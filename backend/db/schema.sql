@@ -143,9 +143,39 @@ CREATE TABLE IF NOT EXISTS possible_duplicates (
   incident_id UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
   possible_duplicate_id UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
   similarity_score DOUBLE PRECISION NOT NULL CHECK (similarity_score BETWEEN 0 AND 1),
+  distance_km DOUBLE PRECISION CHECK (distance_km IS NULL OR distance_km >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT different_incidents CHECK (incident_id <> possible_duplicate_id),
   CONSTRAINT unique_duplicate_direction UNIQUE (incident_id, possible_duplicate_id)
+);
+
+CREATE TABLE IF NOT EXISTS incident_duplicate_reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  possible_duplicate_id UUID NOT NULL REFERENCES possible_duplicates(id) ON DELETE RESTRICT,
+  incident_a_id UUID NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+  incident_b_id UUID NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+  decision VARCHAR(20) NOT NULL CHECK (decision IN ('confirmed', 'rejected')),
+  primary_incident_id UUID REFERENCES incidents(id) ON DELETE RESTRICT,
+  reason TEXT CHECK (reason IS NULL OR length(trim(reason)) BETWEEN 5 AND 2000),
+  reviewed_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  reviewed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT duplicate_review_distinct_incidents CHECK (incident_a_id <> incident_b_id),
+  CONSTRAINT duplicate_review_primary_required CHECK (
+    (decision = 'confirmed' AND primary_incident_id IN (incident_a_id, incident_b_id))
+    OR (decision = 'rejected' AND primary_incident_id IS NULL)
+  )
+);
+
+CREATE TABLE IF NOT EXISTS incident_duplicate_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  primary_incident_id UUID NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+  duplicate_incident_id UUID NOT NULL UNIQUE REFERENCES incidents(id) ON DELETE RESTRICT,
+  review_id UUID NOT NULL UNIQUE REFERENCES incident_duplicate_reviews(id) ON DELETE RESTRICT,
+  assignment_conflict_acknowledged BOOLEAN NOT NULL DEFAULT false,
+  linked_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  linked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolution_verified_at TIMESTAMPTZ,
+  CONSTRAINT duplicate_link_distinct_incidents CHECK (primary_incident_id <> duplicate_incident_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_incidents_status_created ON incidents(status, created_at DESC);
@@ -157,6 +187,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_analyses_incident_time ON ai_analyses(incident
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_urgency ON ai_analyses(urgency);
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_availability ON rescue_teams(availability);
 CREATE INDEX IF NOT EXISTS idx_possible_duplicates_incident ON possible_duplicates(incident_id);
+CREATE INDEX IF NOT EXISTS idx_duplicate_reviews_pair_time
+  ON incident_duplicate_reviews(incident_a_id, incident_b_id, reviewed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_duplicate_links_primary
+  ON incident_duplicate_links(primary_incident_id, linked_at);
+CREATE INDEX IF NOT EXISTS idx_duplicate_links_resolution
+  ON incident_duplicate_links(primary_incident_id, resolution_verified_at);
 CREATE INDEX IF NOT EXISTS idx_team_memberships_team ON team_memberships(team_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_notifications_team_unread
   ON assignment_notifications(team_id, created_at DESC) WHERE read_at IS NULL;

@@ -103,6 +103,20 @@ export async function getIncidentAnalysis(token, incidentId) {
   return response.data;
 }
 
+export async function getIncidentDuplicates(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/duplicates`, { token });
+  return response.data;
+}
+
+export async function reviewIncidentDuplicate(token, incidentId, duplicateIncidentId, review) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/duplicates/${encodeURIComponent(duplicateIncidentId)}/review`, {
+    method: "POST",
+    token,
+    body: review,
+  });
+  return { ...response.data, message: response.message };
+}
+
 export async function listTeams(token) {
   const response = await apiRequest("/api/teams", { token });
   return response.data.teams;
