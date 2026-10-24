@@ -3,9 +3,11 @@ const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
 const API_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 10000;
 
 export class IncidentApiError extends Error {
-  constructor(message) {
+  constructor(message, status = 0, code = undefined) {
     super(message);
     this.name = "IncidentApiError";
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -20,7 +22,7 @@ function validationMessage(body) {
     .join("; ");
 }
 
-export async function submitIncident(payload) {
+export async function submitIncident(payload, idempotencyKey) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   let response;
@@ -28,7 +30,11 @@ export async function submitIncident(payload) {
   try {
     response = await fetch(`${API_BASE_URL}/api/sos`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       credentials: "omit",
       signal: controller.signal,
       body: JSON.stringify(payload),
@@ -56,12 +62,19 @@ export async function submitIncident(payload) {
   if (!response.ok || body?.success !== true) {
     const detail = validationMessage(body);
     const message = typeof body?.message === "string" ? body.message.trim() : "";
-    throw new IncidentApiError(detail || message || `The reporting server returned an error (HTTP ${response.status}). Please try again.`);
+    throw new IncidentApiError(detail || message || `The reporting server returned an error (HTTP ${response.status}). Please try again.`, response.status);
   }
 
   const incidentId = body?.data?.incident_id;
   if ((typeof incidentId !== "string" || !incidentId.trim()) && !(typeof incidentId === "number" && Number.isFinite(incidentId))) {
     throw new IncidentApiError("The server response did not include a valid incident ID. Your report was not confirmed; please try again.");
+  }
+  if (idempotencyKey && (typeof incidentId !== "string" || incidentId.trim().toLowerCase() !== idempotencyKey.toLowerCase())) {
+    throw new IncidentApiError(
+      "The server returned an incident ID that does not match this SOS. Receipt is not confirmed; the report remains queued.",
+      502,
+      "IDEMPOTENCY_MISMATCH",
+    );
   }
 
   return {

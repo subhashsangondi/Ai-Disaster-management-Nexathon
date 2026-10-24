@@ -4,6 +4,7 @@ const { success } = require('../utils/apiResponse');
 async function createSos(req, res) {
   const incident = await incidentRepository.createIncident({
     ...req.body,
+    idempotency_key: req.get('Idempotency-Key'),
     reporter_id: req.user?.user_id || null,
   });
 

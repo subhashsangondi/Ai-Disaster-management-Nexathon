@@ -4,7 +4,7 @@ const env = require('../config/env');
 const controller = require('../controllers/sosController');
 const validateRequest = require('../middleware/validateRequest');
 const { optionalAuthenticate } = require('../middleware/authMiddleware');
-const { sosSchema } = require('../validators/sosValidator');
+const { sosHeadersSchema, sosSchema } = require('../validators/sosValidator');
 
 const router = express.Router();
 const sosLimiter = rateLimit({
@@ -15,6 +15,13 @@ const sosLimiter = rateLimit({
   handler: (_req, res) => res.status(429).json({ success: false, message: 'Too many SOS submissions; please retry shortly' }),
 });
 
-router.post('/', sosLimiter, optionalAuthenticate, validateRequest(sosSchema), controller.createSos);
+router.post(
+  '/',
+  sosLimiter,
+  optionalAuthenticate,
+  validateRequest(sosHeadersSchema, 'headers'),
+  validateRequest(sosSchema),
+  controller.createSos,
+);
 
 module.exports = router;

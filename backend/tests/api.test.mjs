@@ -45,6 +45,51 @@ describe('SOS reporting', () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
+  it('returns the same incident ID when the same SOS idempotency key is submitted twice', async () => {
+    const create = vi.spyOn(incidentRepository, 'createIncident').mockResolvedValue({
+      id: incidentId,
+      status: 'pending',
+    });
+
+    const body = {
+      emergency_type: 'flood',
+      description: 'Water is entering the lower floor.',
+      location_text: 'Oak Street',
+    };
+    const firstResponse = await request(app)
+      .post('/api/sos')
+      .set('Idempotency-Key', incidentId)
+      .send(body);
+    const retryResponse = await request(app)
+      .post('/api/sos')
+      .set('Idempotency-Key', incidentId)
+      .send(body);
+
+    expect(firstResponse.status).toBe(201);
+    expect(retryResponse.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      idempotency_key: incidentId,
+      emergency_type: 'flood',
+    }));
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(firstResponse.body.data.incident_id).toBe(incidentId);
+    expect(retryResponse.body.data.incident_id).toBe(firstResponse.body.data.incident_id);
+  });
+
+  it('rejects a malformed SOS idempotency key', async () => {
+    const response = await request(app)
+      .post('/api/sos')
+      .set('Idempotency-Key', 'not-a-uuid')
+      .send({
+        emergency_type: 'flood',
+        description: 'Water is entering the lower floor.',
+        location_text: 'Oak Street',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Validation failed');
+  });
+
   it('rejects a request without coordinates or location text', async () => {
     const response = await request(app).post('/api/sos').send({
       emergency_type: 'flood',

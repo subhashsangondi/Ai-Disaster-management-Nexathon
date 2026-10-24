@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, ArrowUpRight, CheckCircle2, Clock3, ShieldCheck } from "lucide-react";
 import EmergencyReportForm from "./components/EmergencyReportForm.jsx";
+import { listPendingSOS, retryPendingSOS, sosQueueChangedEvent, sosReceivedEvent } from "./services/offlineSos.js";
+
+const RETRY_BASE_DELAY_MS = 5000;
 
 function normalizeStatus(status) {
   return (status || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
@@ -17,11 +20,68 @@ function formatReportedAt(value) {
 
 export default function App() {
   const [incidentProgress, setIncidentProgress] = useState(null);
+  const [pendingSOSCount, setPendingSOSCount] = useState(0);
+  const [attentionSOSCount, setAttentionSOSCount] = useState(0);
+  const [unknownAttentionCount, setUnknownAttentionCount] = useState(0);
   const isConfirmed = incidentProgress?.id !== undefined;
   const reportedAt = incidentProgress?.reportedAt || "";
   const confirmedStatusLabel = isConfirmed
     ? normalizeStatus(incidentProgress.status || "pending").replaceAll("_", " ")
     : "";
+
+  useEffect(() => {
+    let isMounted = true;
+    let retryTimer;
+
+    async function refreshQueue({ retry = false, force = false } = {}) {
+      try {
+        if (retry && navigator.onLine !== false) await retryPendingSOS({ force });
+        const reports = await listPendingSOS();
+        if (isMounted) {
+          setPendingSOSCount(reports.length);
+          setAttentionSOSCount(reports.filter((report) => report.status === "needs-attention").length);
+          setUnknownAttentionCount(reports.filter((report) => report.status === "needs-attention" && report.deliveryUnknown).length);
+        }
+        window.clearTimeout(retryTimer);
+        const retryableReports = reports.filter((report) => report.status === "pending");
+        if (isMounted && retryableReports.length > 0 && navigator.onLine !== false) {
+          const nextRetryAt = Math.min(...retryableReports.map((report) => (
+            report.nextAttemptAt ? Date.parse(report.nextAttemptAt) : Date.now() + RETRY_BASE_DELAY_MS
+          )));
+          retryTimer = window.setTimeout(
+            () => { void refreshQueue({ retry: true }); },
+            Math.max(1000, nextRetryAt - Date.now()),
+          );
+        }
+      } catch {
+        window.clearTimeout(retryTimer);
+        if (isMounted) {
+          setPendingSOSCount(0);
+          setAttentionSOSCount(0);
+          setUnknownAttentionCount(0);
+        }
+      }
+    }
+
+    const handleOnline = () => { void refreshQueue({ retry: true, force: true }); };
+    const handleQueueChange = () => { void refreshQueue(); };
+    const handleReceived = (event) => {
+      if (!event.detail?.response) return;
+      setIncidentProgress({ ...event.detail.response, reportedAt: new Date().toISOString() });
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener(sosQueueChangedEvent, handleQueueChange);
+    window.addEventListener(sosReceivedEvent, handleReceived);
+    void refreshQueue({ retry: true });
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(retryTimer);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener(sosQueueChangedEvent, handleQueueChange);
+      window.removeEventListener(sosReceivedEvent, handleReceived);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f4f6f8] text-slate-900">
@@ -112,6 +172,17 @@ export default function App() {
                 </>
               )}
             </div>
+
+            {pendingSOSCount > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+                <p className="font-semibold">{pendingSOSCount} SOS {pendingSOSCount === 1 ? "saved" : "reports saved"} on this device</p>
+                <p className="mt-1 leading-5">
+                  {attentionSOSCount > 0
+                    ? `${attentionSOSCount} report${attentionSOSCount === 1 ? " needs" : "s need"} attention; ${unknownAttentionCount > 0 ? "receipt could not be verified for some." : "the server rejected them."}`
+                    : "Waiting to send or confirm. The rescue server has not confirmed receipt."}
+                </p>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="text-sm font-semibold text-slate-900">For your safety</h2>

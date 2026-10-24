@@ -8,6 +8,7 @@ const payload = {
   longitude: null,
   location_text: "Oak Street",
 };
+const idempotencyKey = "30000000-0000-4000-8000-000000000001";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -32,7 +33,7 @@ describe("submitIncident", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(submitIncident(payload)).resolves.toEqual({
+    await expect(submitIncident(payload, idempotencyKey)).resolves.toEqual({
       id: "30000000-0000-4000-8000-000000000001",
       message: "Emergency report received by RescueGrid AI",
       status: "pending",
@@ -41,12 +42,28 @@ describe("submitIncident", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/sos", expect.objectContaining({
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
       credentials: "omit",
       signal: expect.anything(),
       body: JSON.stringify(payload),
     }));
     expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
+  });
+
+  it("keeps the legacy request shape when no idempotency key is supplied", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ success: true, data: { incident_id: idempotencyKey } }),
+    }));
+
+    await submitIncident(payload);
+    expect(fetch.mock.calls[0][1].body).toBe(JSON.stringify(payload));
+    expect(fetch.mock.calls[0][1].headers).not.toHaveProperty("Idempotency-Key");
   });
 
   it("reports network, malformed-response, and backend validation failures", async () => {
@@ -71,6 +88,20 @@ describe("submitIncident", () => {
       json: async () => ({ success: true, message: "Received", data: { status: "pending" } }),
     }));
     await expect(submitIncident(payload)).rejects.toThrow(/valid incident ID/);
+  });
+
+  it("rejects a successful response whose ID differs from the idempotency key", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ success: true, data: { incident_id: "30000000-0000-4000-8000-000000000099" } }),
+    }));
+
+    await expect(submitIncident(payload, idempotencyKey)).rejects.toMatchObject({
+      name: "IncidentApiError",
+      status: 502,
+      code: "IDEMPOTENCY_MISMATCH",
+    });
   });
 
   it("aborts a request that exceeds the configured timeout", async () => {

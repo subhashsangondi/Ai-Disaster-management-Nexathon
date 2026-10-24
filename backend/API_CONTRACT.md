@@ -86,6 +86,7 @@ Returns the current user's `id`, `name`, `email`, `role`, and `created_at`.
 ### `POST /sos` — public, rate limited
 
 Authentication is optional. If a valid public JWT is supplied, its user ID is stored as `reporter_id`.
+Offline-capable clients may send an `Idempotency-Key` header containing a UUID. The server uses it as the incident ID: retrying the same report with the same key returns the existing incident, while reusing that key with different report data returns `409`. The header is optional; requests without it retain server-generated IDs.
 
 ```json
 {

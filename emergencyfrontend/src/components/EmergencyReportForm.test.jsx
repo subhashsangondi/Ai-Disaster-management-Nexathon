@@ -3,8 +3,26 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EmergencyReportForm from "./EmergencyReportForm.jsx";
 import { submitIncident } from "../services/incidents.js";
+import { createPendingSOS, deliverPendingSOS } from "../services/offlineSos.js";
 
-vi.mock("../services/incidents.js", () => ({ submitIncident: vi.fn() }));
+vi.mock("../services/incidents.js", () => ({
+  IncidentApiError: class IncidentApiError extends Error {
+    constructor(message, status = 0) {
+      super(message);
+      this.status = status;
+    }
+  },
+  submitIncident: vi.fn(),
+}));
+vi.mock("../services/offlineSos.js", () => ({
+  createPendingSOS: vi.fn(),
+  createSOSId: vi.fn(() => "30000000-0000-4000-8000-000000000099"),
+  deliverPendingSOS: vi.fn(),
+  SOSDeviceOfflineError: class SOSDeviceOfflineError extends Error {},
+  sosReceivedEvent: "rescuegrid:sos-received",
+}));
+
+const clientId = "30000000-0000-4000-8000-000000000099";
 
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText(/What kind of emergency/), { target: { value: "Flood" } });
@@ -15,6 +33,8 @@ function fillRequiredFields() {
 describe("EmergencyReportForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createPendingSOS.mockImplementation(async (payload) => ({ id: clientId, payload, status: "pending", stored: true }));
+    deliverPendingSOS.mockImplementation((report) => submitIncident(report.payload, report.id));
   });
 
   it("validates required fields before sending", async () => {
@@ -23,6 +43,7 @@ describe("EmergencyReportForm", () => {
     expect(await screen.findByText("Choose an emergency category.")).toBeInTheDocument();
     expect(screen.getByText(/at least 10 characters/)).toBeInTheDocument();
     expect(submitIncident).not.toHaveBeenCalled();
+    expect(createPendingSOS).not.toHaveBeenCalled();
   });
 
   it("submits the exact backend fields and displays the returned incident ID", async () => {
@@ -45,19 +66,21 @@ describe("EmergencyReportForm", () => {
       latitude: null,
       longitude: null,
       location_text: "Oak Street",
-    });
+    }, clientId);
   });
 
-  it("retains form data and allows retry after a network failure", async () => {
-    submitIncident.mockRejectedValueOnce(new Error("Could not reach the reporting server.")).mockResolvedValueOnce({ id: "INC-9", message: "Received", status: "pending" });
+  it("keeps an offline SOS queued and retries it with the same ID", async () => {
+    submitIncident.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ id: clientId, message: "Received", status: "pending" });
     render(<EmergencyReportForm />);
     fillRequiredFields();
     await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the reporting server.");
-    expect(screen.getByLabelText(/Emergency details/)).toHaveValue("Water is entering a residential building.");
-    await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
-    expect(await screen.findByText("INC-9")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Saved on this device" })).toBeInTheDocument();
+    expect(screen.getAllByText(/server has not confirmed whether it received/i)).toHaveLength(2);
+    expect(createPendingSOS).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Try sending again" }));
+    expect(await screen.findByText(clientId)).toBeInTheDocument();
+    expect(deliverPendingSOS.mock.calls.map(([report]) => report.id)).toEqual([clientId, clientId]);
   });
 
   it("handles denied geolocation and still allows a manual location", async () => {
@@ -75,27 +98,28 @@ describe("EmergencyReportForm", () => {
       configurable: true,
       value: { getCurrentPosition: (success) => success({ coords: { latitude: 1.25, longitude: -2.75 } }) },
     });
-    submitIncident.mockResolvedValue({ id: "INC-31", message: "Received", status: "pending" });
+    submitIncident.mockResolvedValue({ id: clientId, message: "Received", status: "pending" });
     render(<EmergencyReportForm />);
     await userEvent.click(screen.getByRole("button", { name: "Use My Current Location" }));
     fireEvent.change(screen.getByLabelText(/What kind of emergency/), { target: { value: "Flood" } });
     fireEvent.change(screen.getByLabelText(/Emergency details/), { target: { value: "Water is entering a residential building." } });
     await userEvent.click(screen.getByRole("button", { name: "Send Emergency Report" }));
 
-    expect(await screen.findByText("INC-31")).toBeInTheDocument();
-    expect(submitIncident).toHaveBeenCalledWith(expect.objectContaining({ latitude: 1.25, longitude: -2.75, location_text: null }));
+    expect(await screen.findByText(clientId)).toBeInTheDocument();
+    expect(submitIncident).toHaveBeenCalledWith(expect.objectContaining({ latitude: 1.25, longitude: -2.75, location_text: null }), clientId);
   });
 
   it("locks immediately against repeated submit events", async () => {
     let resolveSubmission;
-    submitIncident.mockReturnValue(new Promise((resolve) => { resolveSubmission = resolve; }));
+    deliverPendingSOS.mockReturnValue(new Promise((resolve) => { resolveSubmission = resolve; }));
     render(<EmergencyReportForm />);
     fillRequiredFields();
     const form = screen.getByRole("button", { name: "Send Emergency Report" }).closest("form");
     fireEvent.submit(form);
     fireEvent.submit(form);
 
-    expect(submitIncident).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(createPendingSOS).toHaveBeenCalledTimes(1));
+    expect(deliverPendingSOS).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Sending report..." })).toBeDisabled();
     resolveSubmission({ id: "INC-23", message: "Received", status: "pending" });
     await waitFor(() => expect(screen.getByText("INC-23")).toBeInTheDocument());

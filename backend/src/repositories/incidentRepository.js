@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { AppError } = require('../utils/apiResponse');
 
 const incidentColumns = `
   i.id, i.reporter_id, i.emergency_type, i.description,
@@ -6,6 +7,39 @@ const incidentColumns = `
   i.assigned_team_id, i.created_at, i.updated_at`;
 
 async function createIncident(data) {
+  if (data.idempotency_key) {
+    const inserted = await db.query(
+      `INSERT INTO incidents
+        (id, reporter_id, emergency_type, description, latitude, longitude, location_text, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+       ON CONFLICT (id) DO NOTHING
+       RETURNING *`,
+      [
+        data.idempotency_key,
+        data.reporter_id || null,
+        data.emergency_type,
+        data.description,
+        data.latitude ?? null,
+        data.longitude ?? null,
+        data.location_text || null,
+      ],
+    );
+    if (inserted.rows[0]) return inserted.rows[0];
+
+    const existingResult = await db.query('SELECT * FROM incidents WHERE id = $1', [data.idempotency_key]);
+    const existing = existingResult.rows[0];
+    if (!existing) throw new AppError(409, 'SOS could not be safely replayed; please retry');
+
+    const sameReport = existing.reporter_id === (data.reporter_id || null)
+      && existing.emergency_type === data.emergency_type
+      && existing.description === data.description
+      && (existing.latitude == null ? null : Number(existing.latitude)) === (data.latitude ?? null)
+      && (existing.longitude == null ? null : Number(existing.longitude)) === (data.longitude ?? null)
+      && existing.location_text === (data.location_text || null);
+    if (!sameReport) throw new AppError(409, 'Idempotency key was already used for a different SOS report');
+    return existing;
+  }
+
   const result = await db.query(
     `INSERT INTO incidents
       (reporter_id, emergency_type, description, latitude, longitude, location_text, status)

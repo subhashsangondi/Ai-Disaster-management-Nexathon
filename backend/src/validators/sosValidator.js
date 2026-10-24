@@ -45,4 +45,8 @@ const sosSchema = z.object({
   }
 });
 
-module.exports = { sosSchema };
+const sosHeadersSchema = z.object({
+  'idempotency-key': z.string().uuid().optional(),
+}).passthrough();
+
+module.exports = { sosSchema, sosHeadersSchema };
