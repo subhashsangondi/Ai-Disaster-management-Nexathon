@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   EMPTY_TEAM_DRAFT,
+  TEAM_FORM_MODES,
+  TEAM_REGISTRATION_FIELDS,
   canManageTeams,
   recommendationDistance,
   teamDraftPayload,
+  teamFormTransition,
   teamToDraft,
   validateTeamDraft,
 } from "../src/teamManagement.js";
@@ -22,6 +25,28 @@ test("team controls are admin-only", () => {
   assert.equal(canManageTeams("admin"), true);
   assert.equal(canManageTeams("operator"), false);
   assert.equal(canManageTeams("responder"), false);
+});
+
+test("registration form starts collapsed and follows open, cancel, success, and failure transitions", () => {
+  assert.equal(TEAM_FORM_MODES.CLOSED, "closed");
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.CLOSED, "open_registration"), TEAM_FORM_MODES.REGISTER);
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.REGISTER, "cancel"), TEAM_FORM_MODES.CLOSED);
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.REGISTER, "save_success"), TEAM_FORM_MODES.CLOSED);
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.REGISTER, "save_failure"), TEAM_FORM_MODES.REGISTER);
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.CLOSED, "open_edit"), TEAM_FORM_MODES.EDIT);
+  assert.equal(teamFormTransition(TEAM_FORM_MODES.EDIT, "save_failure"), TEAM_FORM_MODES.EDIT);
+});
+
+test("expanded registration retains every existing field", () => {
+  assert.deepEqual(TEAM_REGISTRATION_FIELDS, [
+    "team_name",
+    "capabilities",
+    "base_location_name",
+    "availability",
+    "latitude",
+    "longitude",
+    "contact_info",
+  ]);
 });
 
 test("registration validation reports required and invalid fields", () => {

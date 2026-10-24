@@ -8,8 +8,36 @@ export const EMPTY_TEAM_DRAFT = {
   contact_info: "",
 };
 
-export function canManageTeams(role) {
+export const TEAM_FORM_MODES = Object.freeze({
+  CLOSED: "closed",
+  REGISTER: "register",
+  EDIT: "edit",
+});
+
+export const TEAM_REGISTRATION_FIELDS = Object.freeze([
+  "team_name",
+  "capabilities",
+  "base_location_name",
+  "availability",
+  "latitude",
+  "longitude",
+  "contact_info",
+]);
+
+export function teamFormTransition(currentMode, event) {
+  if (event === "open_registration") return TEAM_FORM_MODES.REGISTER;
+  if (event === "open_edit") return TEAM_FORM_MODES.EDIT;
+  if (event === "cancel" || event === "save_success") return TEAM_FORM_MODES.CLOSED;
+  if (event === "save_failure") return currentMode;
+  return currentMode;
+}
+
+export function shouldShowTeamRegistrationControls(role) {
   return role === "admin";
+}
+
+export function canManageTeams(role) {
+  return shouldShowTeamRegistrationControls(role);
 }
 
 export function teamToDraft(team) {

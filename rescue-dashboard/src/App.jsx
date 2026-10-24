@@ -34,8 +34,10 @@ import {
 } from "./services/api.js";
 import {
   EMPTY_TEAM_DRAFT,
+  TEAM_FORM_MODES,
   canManageTeams,
   recommendationDistance,
+  teamFormTransition,
   teamDraftPayload,
   teamToDraft,
   validateTeamDraft,
@@ -304,7 +306,11 @@ function IncidentMap({ incidents, onSelect }) {
 function TeamMapViewport({ latitude, longitude }) {
   const map = useMap();
   useEffect(() => {
-    if (Number.isFinite(latitude) && Number.isFinite(longitude)) map.setView([latitude, longitude], 12);
+    const refreshId = window.setTimeout(() => {
+      map.invalidateSize();
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) map.setView([latitude, longitude], 12);
+    }, 0);
+    return () => window.clearTimeout(refreshId);
   }, [latitude, longitude, map]);
   return null;
 }
@@ -326,7 +332,8 @@ function TeamLocationPicker({ latitude, longitude, onPick }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <TeamMapClickHandler onPick={onPick} />
-        {coordinates && <><TeamMapViewport latitude={coordinates[0]} longitude={coordinates[1]} /><CircleMarker center={coordinates} radius={8} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }} /></>}
+        <TeamMapViewport latitude={coordinates?.[0]} longitude={coordinates?.[1]} />
+        {coordinates && <CircleMarker center={coordinates} radius={8} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }} />}
       </MapContainer>
       <p className="field-note">Click the map to set approximate base coordinates. Manual coordinate entry remains available.</p>
     </div>
@@ -335,6 +342,7 @@ function TeamLocationPicker({ latitude, longitude, onPick }) {
 
 function TeamManagement({ session, teams, onSave }) {
   const isAdmin = canManageTeams(session.user.role);
+  const [formMode, setFormMode] = useState(TEAM_FORM_MODES.CLOSED);
   const [editingId, setEditingId] = useState("");
   const [draft, setDraft] = useState({ ...EMPTY_TEAM_DRAFT });
   const [errors, setErrors] = useState({});
@@ -343,6 +351,7 @@ function TeamManagement({ session, teams, onSave }) {
   const [error, setError] = useState("");
   const editingTeam = teams.find((team) => team.id === editingId);
   const editingBusyTeam = editingTeam?.availability === "busy";
+  const isFormOpen = formMode !== TEAM_FORM_MODES.CLOSED;
 
   function updateDraft(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -350,6 +359,7 @@ function TeamManagement({ session, teams, onSave }) {
   }
 
   function beginEdit(team) {
+    setFormMode((current) => teamFormTransition(current, "open_edit"));
     setEditingId(team.id);
     setDraft(teamToDraft(team));
     setErrors({});
@@ -358,10 +368,24 @@ function TeamManagement({ session, teams, onSave }) {
     window.setTimeout(() => document.getElementById("team-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
-  function resetForm() {
+  function resetFormFields() {
     setEditingId("");
     setDraft({ ...EMPTY_TEAM_DRAFT });
     setErrors({});
+  }
+
+  function openRegistrationForm() {
+    resetFormFields();
+    setError("");
+    setMessage("");
+    setFormMode((current) => teamFormTransition(current, "open_registration"));
+    window.setTimeout(() => document.getElementById("team-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function closeForm() {
+    resetFormFields();
+    setError("");
+    setFormMode((current) => teamFormTransition(current, "cancel"));
   }
 
   async function submit(event) {
@@ -378,8 +402,10 @@ function TeamManagement({ session, teams, onSave }) {
     try {
       const result = await onSave(editingId, teamDraftPayload(draft, { editingBusyTeam }));
       setMessage(result.message || (editingId ? "Rescue team updated." : "Rescue team registered."));
-      resetForm();
+      resetFormFields();
+      setFormMode((current) => teamFormTransition(current, "save_success"));
     } catch (saveError) {
+      setFormMode((current) => teamFormTransition(current, "save_failure"));
       setError(apiMessage(saveError, "The rescue team could not be saved."));
     } finally {
       setIsSaving(false);
@@ -388,12 +414,12 @@ function TeamManagement({ session, teams, onSave }) {
 
   return (
     <section id="teams" className="panel teams-panel">
-      <div className="panel-heading"><div><h2>{isAdmin ? "Manage Teams" : "Rescue Teams"}</h2><p>{isAdmin ? "Register and maintain dispatch-ready team information." : "Current team capability and availability data."}</p></div><span className="incident-count">{teams.length} teams</span></div>
+      <div className="panel-heading team-panel-heading"><div><h2>{isAdmin ? "Manage Teams" : "Rescue Teams"}</h2><p>{isAdmin ? "Register and maintain dispatch-ready team information." : "Current team capability and availability data."}</p></div><div className="team-heading-actions"><span className="incident-count">{teams.length} teams</span>{isAdmin && <button className={isFormOpen ? "secondary-button" : "primary-button"} type="button" aria-expanded={isFormOpen} aria-controls="team-editor" disabled={isSaving} onClick={isFormOpen ? closeForm : openRegistrationForm}>{isFormOpen ? "Cancel" : "+ Register Team"}</button>}</div></div>
       {message && <div className="alert success team-alert" role="status">{message}</div>}
       {error && <div className="alert error team-alert" role="alert">{error}</div>}
-      {isAdmin && (
+      {isAdmin && isFormOpen && (
         <form id="team-editor" className="team-form" onSubmit={submit} noValidate>
-          <div className="detail-section-heading"><div><p className="eyebrow">ADMIN ONLY</p><h3>{editingId ? `Edit ${editingTeam?.team_name || "team"}` : "Register rescue team"}</h3></div>{editingId && <button className="text-button" type="button" onClick={resetForm}>Cancel edit</button>}</div>
+          <div className="detail-section-heading"><div><p className="eyebrow">ADMIN ONLY</p><h3>{editingId ? `Edit ${editingTeam?.team_name || "team"}` : "Register rescue team"}</h3></div></div>
           <div className="team-form-grid">
             <label>Team name<input value={draft.team_name} maxLength="150" onChange={(event) => updateDraft("team_name", event.target.value)} />{errors.team_name && <small>{errors.team_name}</small>}</label>
             <label>Capabilities<input value={draft.capabilities} onChange={(event) => updateDraft("capabilities", event.target.value)} placeholder="Flood response, medical first aid" />{errors.capabilities && <small>{errors.capabilities}</small>}</label>
@@ -403,7 +429,7 @@ function TeamManagement({ session, teams, onSave }) {
             <label>Longitude<input type="number" min="-180" max="180" step="any" value={draft.longitude} onChange={(event) => updateDraft("longitude", event.target.value)} />{errors.longitude && <small>{errors.longitude}</small>}</label>
             <label className="team-contact-field">Contact information (optional)<input value={draft.contact_info} maxLength="255" onChange={(event) => updateDraft("contact_info", event.target.value)} />{errors.contact_info && <small>{errors.contact_info}</small>}</label>
           </div>
-          <TeamLocationPicker latitude={draft.latitude} longitude={draft.longitude} onPick={(latitude, longitude) => setDraft((current) => ({ ...current, latitude: latitude.toFixed(6), longitude: longitude.toFixed(6) }))} />
+          <TeamLocationPicker latitude={draft.latitude} longitude={draft.longitude} onPick={(latitude, longitude) => { updateDraft("latitude", latitude.toFixed(6)); updateDraft("longitude", longitude.toFixed(6)); }} />
           <button className="primary-button" disabled={isSaving} type="submit">{isSaving ? "Saving..." : editingId ? "Save team changes" : "Register team"}</button>
           {editingBusyTeam && <p className="field-note">Availability is locked while this team has an active incident. Other team details can still be updated.</p>}
         </form>
