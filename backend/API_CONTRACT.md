@@ -162,6 +162,15 @@ Returns `503` if Gemini is unconfigured, unavailable, times out, or returns inva
 
 Returns the most recent stored analysis, or `404` if no analysis exists.
 
+### `GET /incidents/:id/team-recommendations`
+
+Returns deterministic, advisory recommendations for a pending, assignable incident. Only currently
+available teams with a verified capability match are included. Comparable matches are ordered by
+straight-line Haversine distance, with named deterministic tie-breaking. Missing coordinates are
+reported as `distance_km: null`; this is never presented as travel distance or ETA. Confirmed linked
+duplicates and incidents that cannot accept an assignment return `assignment_allowed: false` and no
+recommendations.
+
 ### `PATCH /incidents/:id/assign`
 
 ```json
@@ -182,7 +191,24 @@ Allowed transitions are `assigned → in_progress → resolved`. Assignment is p
 
 ### `GET /teams`
 
-Returns all teams. Optionally filter with `?availability=available`, `busy`, or `offline`.
+Returns all teams, including capabilities, base location, coordinates, availability, optional contact
+information, and active assignment count. Optionally filter with `?availability=available`, `busy`, or
+`offline`. Legacy teams may have `null` capabilities or coordinates.
+
+### `GET /teams/:id`
+
+Returns one rescue team with the same authenticated operator/admin projection.
+
+### `POST /teams` â€” admin only
+
+Registers a team. Required fields are `team_name`, a non-empty `capabilities` string array,
+`base_location_name`, valid `latitude` and `longitude`, and initial `availability` (`available` or
+`offline`). `contact_info` is optional. Registration never creates a responder account.
+
+### `PATCH /teams/:id` â€” admin only
+
+Updates one or more team fields. Coordinates must be supplied as a pair. The `busy` state remains
+assignment-managed; a team with an active incident cannot be manually made available or offline.
 
 ## Dashboard — operator/admin
 

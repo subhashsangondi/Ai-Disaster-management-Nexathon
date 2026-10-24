@@ -17,6 +17,20 @@ CREATE TABLE IF NOT EXISTS rescue_teams (
   team_name VARCHAR(150) NOT NULL UNIQUE,
   availability VARCHAR(20) NOT NULL DEFAULT 'available'
     CHECK (availability IN ('available', 'busy', 'offline')),
+  capabilities TEXT[] CHECK (capabilities IS NULL OR cardinality(capabilities) BETWEEN 1 AND 20),
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  base_location_name VARCHAR(255)
+    CHECK (base_location_name IS NULL OR length(trim(base_location_name)) BETWEEN 2 AND 255),
+  contact_info VARCHAR(255),
+  CONSTRAINT rescue_teams_valid_coordinates CHECK (
+    (latitude IS NULL AND longitude IS NULL)
+    OR (
+      latitude IS NOT NULL AND longitude IS NOT NULL
+      AND latitude BETWEEN -90 AND 90
+      AND longitude BETWEEN -180 AND 180
+    )
+  ),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -186,6 +200,9 @@ CREATE INDEX IF NOT EXISTS idx_incidents_assigned_team ON incidents(assigned_tea
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_incident_time ON ai_analyses(incident_id, analyzed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_urgency ON ai_analyses(urgency);
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_availability ON rescue_teams(availability);
+CREATE INDEX IF NOT EXISTS idx_rescue_teams_coordinates ON rescue_teams(latitude, longitude)
+  WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_rescue_teams_capabilities ON rescue_teams USING GIN(capabilities);
 CREATE INDEX IF NOT EXISTS idx_possible_duplicates_incident ON possible_duplicates(incident_id);
 CREATE INDEX IF NOT EXISTS idx_duplicate_reviews_pair_time
   ON incident_duplicate_reviews(incident_a_id, incident_b_id, reviewed_at DESC);

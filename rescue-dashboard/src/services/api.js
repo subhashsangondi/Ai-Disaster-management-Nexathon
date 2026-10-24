@@ -117,9 +117,33 @@ export async function reviewIncidentDuplicate(token, incidentId, duplicateIncide
   return { ...response.data, message: response.message };
 }
 
-export async function listTeams(token) {
-  const response = await apiRequest("/api/teams", { token });
+export async function listTeams(token, filters = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  }
+  const response = await apiRequest(`/api/teams${query.size ? `?${query}` : ""}`, { token });
   return response.data.teams;
+}
+
+export async function getTeam(token, teamId) {
+  const response = await apiRequest(`/api/teams/${encodeURIComponent(teamId)}`, { token });
+  return response.data;
+}
+
+export async function createTeam(token, team) {
+  const response = await apiRequest("/api/teams", { method: "POST", token, body: team });
+  return { team: response.data, message: response.message };
+}
+
+export async function updateTeam(token, teamId, team) {
+  const response = await apiRequest(`/api/teams/${encodeURIComponent(teamId)}`, { method: "PATCH", token, body: team });
+  return { team: response.data, message: response.message };
+}
+
+export async function getTeamRecommendations(token, incidentId) {
+  const response = await apiRequest(`/api/incidents/${encodeURIComponent(incidentId)}/team-recommendations`, { token });
+  return response.data;
 }
 
 export async function assignTeam(token, incidentId, teamId) {

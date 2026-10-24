@@ -13,7 +13,8 @@
     "db:migrate": "node scripts/database.js migrate",
     "db:seed": "node scripts/database.js seed",
     "verify:response": "node scripts/verify-response-workflow.js",
-    "verify:duplicates": "node scripts/verify-duplicate-workflow.js"
+    "verify:duplicates": "node scripts/verify-duplicate-workflow.js",
+    "verify:teams": "node scripts/verify-team-management.js"
   },
   "engines": {
     "node": ">=22"

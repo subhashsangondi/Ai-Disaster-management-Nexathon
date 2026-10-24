@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import "leaflet/dist/leaflet.css";
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import {
   ApiError,
   analyzeIncident,
@@ -28,7 +28,18 @@ import {
   updateIncidentStatus,
   reviewCompletion,
   reviewIncidentDuplicate,
+  createTeam,
+  updateTeam,
+  getTeamRecommendations,
 } from "./services/api.js";
+import {
+  EMPTY_TEAM_DRAFT,
+  canManageTeams,
+  recommendationDistance,
+  teamDraftPayload,
+  teamToDraft,
+  validateTeamDraft,
+} from "./teamManagement.js";
 
 const STATUS_LABELS = {
   pending: "Pending",
@@ -290,6 +301,126 @@ function IncidentMap({ incidents, onSelect }) {
   );
 }
 
+function TeamMapViewport({ latitude, longitude }) {
+  const map = useMap();
+  useEffect(() => {
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) map.setView([latitude, longitude], 12);
+  }, [latitude, longitude, map]);
+  return null;
+}
+
+function TeamMapClickHandler({ onPick }) {
+  useMapEvents({ click: (event) => onPick(event.latlng.lat, event.latlng.lng) });
+  return null;
+}
+
+function TeamLocationPicker({ latitude, longitude, onPick }) {
+  const validCoordinates = Number.isFinite(Number(latitude)) && latitude !== ""
+    && Number.isFinite(Number(longitude)) && longitude !== "";
+  const coordinates = validCoordinates ? [Number(latitude), Number(longitude)] : null;
+  return (
+    <div className="team-location-picker">
+      <MapContainer center={coordinates || [20.5937, 78.9629]} zoom={coordinates ? 12 : 4} scrollWheelZoom className="team-map">
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <TeamMapClickHandler onPick={onPick} />
+        {coordinates && <><TeamMapViewport latitude={coordinates[0]} longitude={coordinates[1]} /><CircleMarker center={coordinates} radius={8} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#2563eb", fillOpacity: 1 }} /></>}
+      </MapContainer>
+      <p className="field-note">Click the map to set approximate base coordinates. Manual coordinate entry remains available.</p>
+    </div>
+  );
+}
+
+function TeamManagement({ session, teams, onSave }) {
+  const isAdmin = canManageTeams(session.user.role);
+  const [editingId, setEditingId] = useState("");
+  const [draft, setDraft] = useState({ ...EMPTY_TEAM_DRAFT });
+  const [errors, setErrors] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const editingTeam = teams.find((team) => team.id === editingId);
+  const editingBusyTeam = editingTeam?.availability === "busy";
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  function beginEdit(team) {
+    setEditingId(team.id);
+    setDraft(teamToDraft(team));
+    setErrors({});
+    setMessage("");
+    setError("");
+    window.setTimeout(() => document.getElementById("team-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function resetForm() {
+    setEditingId("");
+    setDraft({ ...EMPTY_TEAM_DRAFT });
+    setErrors({});
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const nextErrors = validateTeamDraft(draft, { editingBusyTeam });
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      setError("Review the highlighted team fields.");
+      return;
+    }
+    setIsSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await onSave(editingId, teamDraftPayload(draft, { editingBusyTeam }));
+      setMessage(result.message || (editingId ? "Rescue team updated." : "Rescue team registered."));
+      resetForm();
+    } catch (saveError) {
+      setError(apiMessage(saveError, "The rescue team could not be saved."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section id="teams" className="panel teams-panel">
+      <div className="panel-heading"><div><h2>{isAdmin ? "Manage Teams" : "Rescue Teams"}</h2><p>{isAdmin ? "Register and maintain dispatch-ready team information." : "Current team capability and availability data."}</p></div><span className="incident-count">{teams.length} teams</span></div>
+      {message && <div className="alert success team-alert" role="status">{message}</div>}
+      {error && <div className="alert error team-alert" role="alert">{error}</div>}
+      {isAdmin && (
+        <form id="team-editor" className="team-form" onSubmit={submit} noValidate>
+          <div className="detail-section-heading"><div><p className="eyebrow">ADMIN ONLY</p><h3>{editingId ? `Edit ${editingTeam?.team_name || "team"}` : "Register rescue team"}</h3></div>{editingId && <button className="text-button" type="button" onClick={resetForm}>Cancel edit</button>}</div>
+          <div className="team-form-grid">
+            <label>Team name<input value={draft.team_name} maxLength="150" onChange={(event) => updateDraft("team_name", event.target.value)} />{errors.team_name && <small>{errors.team_name}</small>}</label>
+            <label>Capabilities<input value={draft.capabilities} onChange={(event) => updateDraft("capabilities", event.target.value)} placeholder="Flood response, medical first aid" />{errors.capabilities && <small>{errors.capabilities}</small>}</label>
+            <label>Base location name<input value={draft.base_location_name} maxLength="255" onChange={(event) => updateDraft("base_location_name", event.target.value)} />{errors.base_location_name && <small>{errors.base_location_name}</small>}</label>
+            <label>Initial availability<select value={draft.availability} disabled={editingBusyTeam} onChange={(event) => updateDraft("availability", event.target.value)}>{editingBusyTeam && <option value="busy">Busy (assignment managed)</option>}<option value="available">Available</option><option value="offline">Offline</option></select>{errors.availability && <small>{errors.availability}</small>}</label>
+            <label>Latitude<input type="number" min="-90" max="90" step="any" value={draft.latitude} onChange={(event) => updateDraft("latitude", event.target.value)} />{errors.latitude && <small>{errors.latitude}</small>}</label>
+            <label>Longitude<input type="number" min="-180" max="180" step="any" value={draft.longitude} onChange={(event) => updateDraft("longitude", event.target.value)} />{errors.longitude && <small>{errors.longitude}</small>}</label>
+            <label className="team-contact-field">Contact information (optional)<input value={draft.contact_info} maxLength="255" onChange={(event) => updateDraft("contact_info", event.target.value)} />{errors.contact_info && <small>{errors.contact_info}</small>}</label>
+          </div>
+          <TeamLocationPicker latitude={draft.latitude} longitude={draft.longitude} onPick={(latitude, longitude) => setDraft((current) => ({ ...current, latitude: latitude.toFixed(6), longitude: longitude.toFixed(6) }))} />
+          <button className="primary-button" disabled={isSaving} type="submit">{isSaving ? "Saving..." : editingId ? "Save team changes" : "Register team"}</button>
+          {editingBusyTeam && <p className="field-note">Availability is locked while this team has an active incident. Other team details can still be updated.</p>}
+        </form>
+      )}
+      {teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => (
+        <article className="team-card" key={team.id}>
+          <div className="team-card-heading"><span className={`team-state ${team.availability}`} /><div><strong>{team.team_name}</strong><p>{team.availability}{team.active_assignment_count ? ` · ${team.active_assignment_count} active` : ""}</p></div></div>
+          <div className="capability-badges">{team.capabilities?.length ? team.capabilities.map((capability) => <span key={capability}>{capability}</span>) : <span className="unknown-capability">Capabilities unknown</span>}</div>
+          <p className="team-location">{team.base_location_name || "Base location unknown"}{team.latitude == null || team.longitude == null ? " · Coordinates unknown" : ` · ${team.latitude}, ${team.longitude}`}</p>
+          {team.contact_info && <p className="team-contact">Contact: {team.contact_info}</p>}
+          {isAdmin && <button className="secondary-button" type="button" onClick={() => beginEdit(team)}>Edit team</button>}
+        </article>
+      ))}</div>}
+    </section>
+  );
+}
+
 function AnalysisPanel({ incident, analysisResult, isAnalyzing, onAnalyze, onSelectIncident }) {
   const analysis = analysisResult?.analysis || incident.latest_analysis;
   const duplicates = analysisResult?.possible_duplicates || [];
@@ -394,7 +525,25 @@ function DuplicateReviewPanel({ incident, duplicateData, busyAction, onReview, o
   );
 }
 
-function IncidentDetail({ incident, teams, analysisResult, duplicateData, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onReviewDuplicate, onSelectIncident }) {
+function RecommendedTeams({ recommendationData, selectedTeamId, onSelectTeam }) {
+  const recommendations = recommendationData?.recommendations || [];
+  return (
+    <section className="detail-section" aria-labelledby="recommendations-title">
+      <div className="detail-section-heading"><div><p className="eyebrow">ADVISORY · OPERATOR DECIDES</p><h3 id="recommendations-title">Recommended Rescue Teams</h3></div></div>
+      <p>{recommendationData?.message || "Recommendation data is unavailable."}</p>
+      {recommendations.length > 0 && <div className="recommendation-list">{recommendations.map((team) => (
+        <article className={`recommendation-card ${selectedTeamId === team.team_id ? "selected" : ""}`} key={team.team_id}>
+          <div className="recommendation-rank">#{team.rank}</div>
+          <div className="recommendation-content"><div className="recommendation-heading"><strong>{team.team_name}</strong><span className={`team-state ${team.availability}`} /></div><div className="capability-badges">{team.capabilities?.map((capability) => <span key={capability}>{capability}</span>)}</div><p>{recommendationDistance(team)}</p><small>{team.explanation}</small></div>
+          <button className="secondary-button" type="button" onClick={() => onSelectTeam(team.team_id)}>{selectedTeamId === team.team_id ? "Selected" : "Select"}</button>
+        </article>
+      ))}</div>}
+      <p className="field-note">Distances use a straight-line Haversine calculation, not road distance or ETA. Recommendations never dispatch automatically.</p>
+    </section>
+  );
+}
+
+function IncidentDetail({ incident, teams, analysisResult, duplicateData, recommendationData, progressEvents, completionData, busyAction, actionError, successMessage, onAnalyze, onAssign, onStatus, onReviewCompletion, onReviewDuplicate, onSelectIncident }) {
   const [teamId, setTeamId] = useState("");
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -427,6 +576,8 @@ function IncidentDetail({ incident, teams, analysisResult, duplicateData, progre
       <AnalysisPanel incident={incident} analysisResult={analysisResult} isAnalyzing={busyAction === "analyze"} onAnalyze={onAnalyze} onSelectIncident={onSelectIncident} />
 
       <DuplicateReviewPanel incident={incident} duplicateData={duplicateData} busyAction={busyAction} onReview={onReviewDuplicate} onSelectIncident={onSelectIncident} />
+
+      <RecommendedTeams recommendationData={recommendationData} selectedTeamId={teamId} onSelectTeam={setTeamId} />
 
       <section className="detail-section" aria-labelledby="response-title">
         <div className="detail-section-heading"><div><p className="eyebrow">HUMAN DECISION</p><h3 id="response-title">Response management</h3></div></div>
@@ -472,6 +623,7 @@ function Dashboard({ session, onLogout }) {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [duplicateData, setDuplicateData] = useState({ role: "independent", candidates: [], links: [] });
+  const [recommendationData, setRecommendationData] = useState({ assignment_allowed: false, recommendations: [], message: "Select an incident to view recommendations." });
   const [progressEvents, setProgressEvents] = useState([]);
   const [completionData, setCompletionData] = useState({ reports: [], evidence_photos_supported: false });
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -531,16 +683,18 @@ function Dashboard({ session, onLogout }) {
     setIsDetailLoading(true);
     setActionError("");
     try {
-      const [incident, nextProgressEvents, nextCompletionData, nextDuplicateData] = await Promise.all([
+      const [incident, nextProgressEvents, nextCompletionData, nextDuplicateData, nextRecommendationData] = await Promise.all([
         getIncident(session.token, incidentId),
         getIncidentProgress(session.token, incidentId),
         getIncidentCompletion(session.token, incidentId),
         getIncidentDuplicates(session.token, incidentId),
+        getTeamRecommendations(session.token, incidentId),
       ]);
       setSelectedIncident(incident);
       setProgressEvents(nextProgressEvents);
       setCompletionData(nextCompletionData);
       setDuplicateData(nextDuplicateData);
+      setRecommendationData(nextRecommendationData);
       setAnalysisResult(null);
       if (incident.latest_analysis) {
         const analysis = await getIncidentAnalysis(session.token, incidentId);
@@ -605,6 +759,20 @@ function Dashboard({ session, onLogout }) {
     await runAction("duplicate-review", () => reviewIncidentDuplicate(session.token, selectedId, duplicateIncidentId, review), review.decision === "confirmed" ? "Duplicate incidents linked." : "Potential duplicate rejected.");
   }
 
+  async function handleSaveTeam(teamId, payload) {
+    try {
+      const result = teamId
+        ? await updateTeam(session.token, teamId, payload)
+        : await createTeam(session.token, payload);
+      await refreshDashboard({ quiet: true });
+      if (selectedId) await loadSelectedIncident(selectedId);
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) handleError(error, "The team update failed.");
+      throw error;
+    }
+  }
+
   const summary = [
     { label: "Total Incidents", value: stats?.total_incidents ?? 0, caption: "Stored reports" },
     { label: "Critical Cases", value: stats?.critical_recommendations ?? 0, caption: "AI recommendations" },
@@ -647,9 +815,9 @@ function Dashboard({ session, onLogout }) {
         </section>
 
         {isDetailLoading && <section className="panel detail-panel"><div className="empty-state">Loading incident details...</div></section>}
-        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} duplicateData={duplicateData} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onReviewDuplicate={handleReviewDuplicate} onSelectIncident={selectIncident} />}
+        {!isDetailLoading && selectedIncident && <IncidentDetail key={selectedIncident.id} incident={selectedIncident} teams={teams} analysisResult={analysisResult} duplicateData={duplicateData} recommendationData={recommendationData} progressEvents={progressEvents} completionData={completionData} busyAction={busyAction} actionError={actionError} successMessage={successMessage} onAnalyze={handleAnalyze} onAssign={handleAssign} onStatus={handleStatus} onReviewCompletion={handleReviewCompletion} onReviewDuplicate={handleReviewDuplicate} onSelectIncident={selectIncident} />}
 
-        <section id="teams" className="panel teams-panel"><div className="panel-heading"><div><h2>Rescue Teams</h2><p>Current availability from the backend.</p></div><span className="incident-count">{teams.length} teams</span></div>{teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => <article className="team-card" key={team.id}><span className={`team-state ${team.availability}`} /> <div><strong>{team.team_name}</strong><p>{team.availability}</p></div></article>)}</div>}</section>
+        <TeamManagement session={session} teams={teams} onSave={handleSaveTeam} />
         <footer className="footer"><span>RescueGrid AI — Rescue Coordination Platform</span><span>Live backend data · Human review required</span></footer>
       </main>
     </div>

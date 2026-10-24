@@ -4,6 +4,7 @@ const duplicateService = require('../services/duplicateService');
 const assignmentService = require('../services/assignmentService');
 const responseService = require('../services/responseService');
 const duplicateReviewService = require('../services/duplicateReviewService');
+const teamRecommendationService = require('../services/teamRecommendationService');
 const { AppError, success } = require('../utils/apiResponse');
 
 async function listIncidents(req, res) {
@@ -114,6 +115,11 @@ async function reviewDuplicate(req, res) {
   });
 }
 
+async function getTeamRecommendations(req, res) {
+  const result = await teamRecommendationService.getTeamRecommendations(req.params.id);
+  return success(res, { data: result });
+}
+
 module.exports = {
   listIncidents,
   getIncident,
@@ -127,4 +133,5 @@ module.exports = {
   rejectCompletion,
   getDuplicates,
   reviewDuplicate,
+  getTeamRecommendations,
 };

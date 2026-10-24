@@ -18,6 +18,11 @@ router.get('/', validateRequest(incidentFiltersSchema, 'query'), controller.list
 router.get('/:id', validateRequest(uuidParamsSchema, 'params'), controller.getIncident);
 router.post('/:id/analyze', validateRequest(uuidParamsSchema, 'params'), controller.analyze);
 router.get('/:id/analysis', validateRequest(uuidParamsSchema, 'params'), controller.getAnalysis);
+router.get(
+  '/:id/team-recommendations',
+  validateRequest(uuidParamsSchema, 'params'),
+  controller.getTeamRecommendations,
+);
 router.get('/:id/duplicates', validateRequest(uuidParamsSchema, 'params'), controller.getDuplicates);
 router.post(
   '/:id/duplicates/:duplicateId/review',

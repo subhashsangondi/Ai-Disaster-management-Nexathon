@@ -21,6 +21,9 @@ import {
   submitResponderCompletion,
   reviewCompletion,
   reviewIncidentDuplicate,
+  createTeam,
+  updateTeam,
+  getTeamRecommendations,
 } from "../src/services/api.js";
 
 const originalFetch = globalThis.fetch;
@@ -154,4 +157,40 @@ test("operator duplicate review APIs load links and send explicit review decisio
     assignment_conflict_acknowledged: true,
   });
   assert.equal(requests[1].options.headers.Authorization, "Bearer jwt");
+});
+
+test("team management uses authenticated admin endpoints and exact payloads", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return response({ success: true, message: "Saved", data: { id: "team-1", team_name: "Flood Unit" } });
+  };
+  const team = {
+    team_name: "Flood Unit",
+    capabilities: ["Flood response"],
+    base_location_name: "Harbor",
+    latitude: 12.9,
+    longitude: 77.5,
+    availability: "available",
+    contact_info: null,
+  };
+  await createTeam("admin-jwt", team);
+  await updateTeam("admin-jwt", "team-1", { ...team, availability: "offline" });
+  assert.equal(requests[0].url, "http://localhost:4000/api/teams");
+  assert.equal(requests[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(requests[0].options.body), team);
+  assert.equal(requests[1].url, "http://localhost:4000/api/teams/team-1");
+  assert.equal(requests[1].options.method, "PATCH");
+  assert.equal(requests[1].options.headers.Authorization, "Bearer admin-jwt");
+});
+
+test("recommendations use the protected incident endpoint and preserve explanations", async () => {
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "http://localhost:4000/api/incidents/incident-1/team-recommendations");
+    assert.equal(options.headers.Authorization, "Bearer jwt");
+    return response({ success: true, data: { recommendations: [{ team_id: "team-1", rank: 1, explanation: "Flood response matches." }] } });
+  };
+  const result = await getTeamRecommendations("jwt", "incident-1");
+  assert.equal(result.recommendations[0].rank, 1);
+  assert.match(result.recommendations[0].explanation, /matches/);
 });
