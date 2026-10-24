@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { CATEGORY_IDS, CAPABILITY_IDS } = require('../domain/teamProfile');
 
 const teamIdParamsSchema = z.object({ id: z.uuid() });
 const availabilityQuerySchema = z.object({
@@ -6,7 +7,10 @@ const availabilityQuerySchema = z.object({
 });
 
 const teamName = z.string().trim().min(2).max(150);
-const capabilities = z.array(z.string().trim().min(2).max(100)).min(1).max(20)
+const primaryCategory = z.enum(CATEGORY_IDS);
+const standardizedCapabilities = z.array(z.enum(CAPABILITY_IDS)).min(1).max(20)
+  .transform((items) => [...new Set(items)]);
+const legacyCompatibleCapabilities = z.array(z.string().trim().min(2).max(100)).min(1).max(20)
   .transform((items) => [...new Set(items.map((item) => item.replace(/\s+/g, ' ')))]);
 const baseLocationName = z.string().trim().min(2).max(255);
 const latitude = z.number().finite().min(-90).max(90);
@@ -15,21 +19,23 @@ const contactInfo = z.string().trim().max(255).nullable().optional();
 
 const createTeamSchema = z.object({
   team_name: teamName,
-  capabilities,
+  primary_category: primaryCategory,
+  capabilities: standardizedCapabilities,
   base_location_name: baseLocationName,
   latitude,
   longitude,
-  availability: z.enum(['available', 'offline']),
+  availability: z.enum(['available', 'busy', 'offline']),
   contact_info: contactInfo,
 }).strict();
 
 const updateTeamSchema = z.object({
   team_name: teamName.optional(),
-  capabilities: capabilities.optional(),
+  primary_category: primaryCategory.optional(),
+  capabilities: legacyCompatibleCapabilities.optional(),
   base_location_name: baseLocationName.nullable().optional(),
   latitude: latitude.nullable().optional(),
   longitude: longitude.nullable().optional(),
-  availability: z.enum(['available', 'offline']).optional(),
+  availability: z.enum(['available', 'busy', 'offline']).optional(),
   contact_info: contactInfo,
 }).strict().superRefine((data, context) => {
   if (Object.keys(data).length === 0) {

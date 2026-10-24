@@ -500,6 +500,15 @@ h1 {
   position: relative;
 }
 
+.map-reset {
+  position: absolute;
+  z-index: 500;
+  top: 10px;
+  right: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .map-empty {
   position: absolute;
   z-index: 500;
@@ -1038,6 +1047,10 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.team-card-heading {
+  flex-wrap: wrap;
+}
+
 .team-card strong {
   font-size: 12px;
 }
@@ -1058,6 +1071,34 @@ textarea:focus-visible {
   text-transform: none;
 }
 
+.team-card .team-category {
+  margin: 0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.team-card.incomplete {
+  border-color: #fed7aa;
+  background: #fffdfa;
+}
+
+.profile-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .25px;
+  text-transform: uppercase;
+}
+
+.profile-badge.incomplete {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .capability-badges {
   display: flex;
   flex-wrap: wrap;
@@ -1076,6 +1117,16 @@ textarea:focus-visible {
 .capability-badges .unknown-capability {
   background: #f1f5f9;
   color: #64748b;
+}
+
+.capability-badges .legacy-capability {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.capability-badges .more-capabilities {
+  background: #eef2ff;
+  color: #4338ca;
 }
 
 .team-alert {
@@ -1142,6 +1193,101 @@ textarea:focus-visible {
   font-weight: 500;
 }
 
+.capability-selector {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+}
+
+.capability-selector legend {
+  padding: 0 5px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.capability-selector > p,
+.legacy-capabilities p {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.capability-selector > small {
+  display: block;
+  margin-top: 10px;
+  color: #b91c1c;
+  font-size: 11px;
+}
+
+.capability-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.capability-group {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 11px;
+}
+
+.capability-group > strong,
+.legacy-capabilities > strong {
+  color: #334155;
+  font-size: 11px;
+}
+
+.team-form-grid .capability-option {
+  display: flex;
+  align-items: flex-start;
+  grid-template-columns: none;
+  gap: 7px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.team-form-grid .capability-option input {
+  width: auto;
+  min-height: auto;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.legacy-capabilities {
+  margin-top: 14px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.legacy-capabilities p {
+  margin: 4px 0 8px;
+}
+
+.legacy-capabilities .legacy-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legacy-capabilities button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .team-contact-field {
   grid-column: 1 / -1;
 }
@@ -1203,6 +1349,11 @@ textarea:focus-visible {
   color: #64748b;
   font-size: 11px;
   line-height: 1.5;
+}
+
+.recommendation-content .team-category {
+  color: #334155;
+  font-weight: 700;
 }
 
 .team-state {
@@ -1392,7 +1543,8 @@ textarea:focus-visible {
   .detail-grid,
   .analysis-grid,
   .team-grid,
-  .team-form-grid {
+  .team-form-grid,
+  .capability-groups {
     grid-template-columns: 1fr;
   }
 

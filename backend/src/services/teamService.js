@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const teamRepository = require('../repositories/teamRepository');
+const { analyzeCapabilities, normalizeCapability } = require('../domain/teamProfile');
 const { AppError } = require('../utils/apiResponse');
 
 function normalizeDatabaseError(error) {
@@ -42,7 +43,22 @@ async function updateTeam({ teamId, data, actorId }, database = db) {
     const current = currentResult.rows[0];
     if (!current) throw new AppError(404, 'Rescue team not found');
     if (data.availability && current.active_assignment_count > 0) {
-      throw new AppError(409, 'A team with active incidents cannot be manually marked available or offline');
+      throw new AppError(409, 'A team with active incidents cannot have its availability changed manually');
+    }
+    if (data.capabilities) {
+      const currentLegacy = new Set(analyzeCapabilities(current.capabilities).legacy);
+      const unknownAdditions = data.capabilities.filter((capability) => (
+        !normalizeCapability(capability) && !currentLegacy.has(capability)
+      ));
+      if (unknownAdditions.length > 0) {
+        throw new AppError(400, 'New capabilities must use a supported standardized identifier');
+      }
+      data = {
+        ...data,
+        capabilities: [...new Set(data.capabilities.map((capability) => (
+          normalizeCapability(capability) || capability
+        )))],
+      };
     }
     const team = await teamRepository.updateTeam(teamId, data, client);
     await client.query(

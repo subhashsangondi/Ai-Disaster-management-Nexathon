@@ -15,6 +15,7 @@
     "verify:response": "node scripts/verify-response-workflow.js",
     "verify:duplicates": "node scripts/verify-duplicate-workflow.js",
     "verify:teams": "node scripts/verify-team-management.js",
+    "verify:team-profiles": "node scripts/verify-team-profiles.js",
     "verify:ai-fallback": "node scripts/verify-ai-fallback.js"
   },
   "engines": {

@@ -1,7 +1,8 @@
 const db = require('../config/database');
+const { presentTeam } = require('../domain/teamProfile');
 
 const teamColumns = `
-  team.id, team.team_name, team.availability, team.capabilities,
+  team.id, team.team_name, team.availability, team.primary_category, team.capabilities,
   team.latitude, team.longitude, team.base_location_name,
   team.contact_info, team.created_at`;
 
@@ -20,7 +21,7 @@ async function listTeams({ availability } = {}) {
      ORDER BY team.team_name`,
     params,
   );
-  return result.rows;
+  return result.rows.map(presentTeam);
 }
 
 async function findById(id, client = db) {
@@ -31,18 +32,19 @@ async function findById(id, client = db) {
      FROM rescue_teams team WHERE team.id = $1`,
     [id],
   );
-  return result.rows[0] || null;
+  return result.rows[0] ? presentTeam(result.rows[0]) : null;
 }
 
 async function createTeam(data, client = db) {
   const result = await client.query(
     `INSERT INTO rescue_teams
-       (team_name, capabilities, latitude, longitude, base_location_name, contact_info, availability)
-     VALUES ($1, $2::text[], $3, $4, $5, $6, $7)
-     RETURNING id, team_name, availability, capabilities, latitude, longitude,
+       (team_name, primary_category, capabilities, latitude, longitude, base_location_name, contact_info, availability)
+     VALUES ($1, $2, $3::text[], $4, $5, $6, $7, $8)
+     RETURNING id, team_name, availability, primary_category, capabilities, latitude, longitude,
        base_location_name, contact_info, created_at`,
     [
       data.team_name,
+      data.primary_category,
       data.capabilities,
       data.latitude,
       data.longitude,
@@ -51,7 +53,7 @@ async function createTeam(data, client = db) {
       data.availability,
     ],
   );
-  return { ...result.rows[0], active_assignment_count: 0 };
+  return presentTeam({ ...result.rows[0], active_assignment_count: 0 });
 }
 
 async function updateTeam(id, data, client = db) {
@@ -62,6 +64,7 @@ async function updateTeam(id, data, client = db) {
     fields.push(`${column} = $${params.length}${cast}`);
   };
   if (data.team_name !== undefined) add('team_name', data.team_name);
+  if (data.primary_category !== undefined) add('primary_category', data.primary_category);
   if (data.capabilities !== undefined) add('capabilities', data.capabilities, '::text[]');
   if (data.latitude !== undefined) add('latitude', data.latitude);
   if (data.longitude !== undefined) add('longitude', data.longitude);
@@ -71,11 +74,11 @@ async function updateTeam(id, data, client = db) {
   params.push(id);
   const result = await client.query(
     `UPDATE rescue_teams SET ${fields.join(', ')} WHERE id = $${params.length}
-     RETURNING id, team_name, availability, capabilities, latitude, longitude,
+     RETURNING id, team_name, availability, primary_category, capabilities, latitude, longitude,
        base_location_name, contact_info, created_at`,
     params,
   );
-  return result.rows[0] || null;
+  return result.rows[0] ? presentTeam(result.rows[0]) : null;
 }
 
 module.exports = { listTeams, findById, createTeam, updateTeam };

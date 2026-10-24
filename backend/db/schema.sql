@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS rescue_teams (
   team_name VARCHAR(150) NOT NULL UNIQUE,
   availability VARCHAR(20) NOT NULL DEFAULT 'available'
     CHECK (availability IN ('available', 'busy', 'offline')),
+  primary_category VARCHAR(50) CHECK (
+    primary_category IS NULL OR primary_category IN (
+      'flood_water_rescue', 'fire_urban_rescue', 'medical_response',
+      'search_evacuation', 'general_disaster_response'
+    )
+  ),
   capabilities TEXT[] CHECK (capabilities IS NULL OR cardinality(capabilities) BETWEEN 1 AND 20),
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
@@ -200,6 +206,8 @@ CREATE INDEX IF NOT EXISTS idx_incidents_assigned_team ON incidents(assigned_tea
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_incident_time ON ai_analyses(incident_id, analyzed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_analyses_urgency ON ai_analyses(urgency);
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_availability ON rescue_teams(availability);
+CREATE INDEX IF NOT EXISTS idx_rescue_teams_primary_category ON rescue_teams(primary_category)
+  WHERE primary_category IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_coordinates ON rescue_teams(latitude, longitude)
   WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_rescue_teams_capabilities ON rescue_teams USING GIN(capabilities);

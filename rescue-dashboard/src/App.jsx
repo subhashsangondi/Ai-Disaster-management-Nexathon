@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import "leaflet/dist/leaflet.css";
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
@@ -34,14 +34,23 @@ import {
 } from "./services/api.js";
 import {
   EMPTY_TEAM_DRAFT,
+  CAPABILITY_GROUPS,
+  TEAM_CATEGORIES,
   TEAM_FORM_MODES,
   canManageTeams,
+  capabilityLabel,
+  categoryLabel,
+  isTeamProfileComplete,
   recommendationDistance,
   teamFormTransition,
   teamDraftPayload,
   teamToDraft,
+  teamMapCoordinates,
+  teamMapPickDraft,
   validateTeamDraft,
+  visibleCapabilityBadges,
 } from "./teamManagement.js";
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM, bindMapResize, createViewportController } from "./mapView.js";
 import { formatProviderMetadata } from "./analysisPresentation.js";
 
 const STATUS_LABELS = {
@@ -253,29 +262,36 @@ function ResponderDashboard({ session, onLogout }) {
   );
 }
 
-function MapViewport({ incidents }) {
+function MapViewport({ incidents, resetToken }) {
   const map = useMap();
+  const controllerRef = useRef(null);
+  const incidentsRef = useRef(incidents);
+  useEffect(() => { incidentsRef.current = incidents; });
   useEffect(() => {
-    if (incidents.length === 1) {
-      map.setView([Number(incidents[0].latitude), Number(incidents[0].longitude)], 13);
-    } else if (incidents.length > 1) {
-      map.fitBounds(incidents.map((incident) => [Number(incident.latitude), Number(incident.longitude)]), { padding: [24, 24] });
-    }
-  }, [incidents, map]);
+    controllerRef.current = createViewportController(map);
+    const unbind = bindMapResize(map);
+    return () => { unbind(); controllerRef.current = null; };
+  }, [map]);
+  useEffect(() => { controllerRef.current?.sync(incidents); }, [incidents, map]);
+  useEffect(() => {
+    if (resetToken > 0) controllerRef.current?.reset(incidentsRef.current);
+  }, [resetToken]);
   return null;
 }
 
 function IncidentMap({ incidents, onSelect }) {
   const mappedIncidents = useMemo(() => incidents.filter(hasCoordinates), [incidents]);
+  const [resetToken, setResetToken] = useState(0);
   return (
     <div className="map-wrap">
-      <MapContainer center={[20.5937, 78.9629]} zoom={5} scrollWheelZoom className="map-placeholder">
+      <button className="secondary-button map-reset" type="button" onClick={() => setResetToken((current) => current + 1)}>Reset View</button>
+      <MapContainer center={DEFAULT_MAP_CENTER} zoom={DEFAULT_MAP_ZOOM} scrollWheelZoom className="map-placeholder">
         <TileLayer
           attribution='Imagery &copy; <a href="https://www.esri.com/">Esri</a> and its imagery providers'
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           maxZoom={19}
         />
-        <MapViewport incidents={mappedIncidents} />
+        <MapViewport incidents={mappedIncidents} resetToken={resetToken} />
         {mappedIncidents.map((incident) => {
           const urgency = urgencyFor(incident);
           return (
@@ -322,9 +338,7 @@ function TeamMapClickHandler({ onPick }) {
 }
 
 function TeamLocationPicker({ latitude, longitude, onPick }) {
-  const validCoordinates = Number.isFinite(Number(latitude)) && latitude !== ""
-    && Number.isFinite(Number(longitude)) && longitude !== "";
-  const coordinates = validCoordinates ? [Number(latitude), Number(longitude)] : null;
+  const coordinates = teamMapCoordinates(latitude, longitude);
   return (
     <div className="team-location-picker">
       <MapContainer center={coordinates || [20.5937, 78.9629]} zoom={coordinates ? 12 : 4} scrollWheelZoom className="team-map">
@@ -357,6 +371,23 @@ function TeamManagement({ session, teams, onSave }) {
   function updateDraft(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  function toggleCapability(capabilityId) {
+    setDraft((current) => ({
+      ...current,
+      capabilities: current.capabilities.includes(capabilityId)
+        ? current.capabilities.filter((id) => id !== capabilityId)
+        : [...current.capabilities, capabilityId],
+    }));
+    setErrors((current) => ({ ...current, capabilities: undefined }));
+  }
+
+  function removeLegacyCapability(capability) {
+    setDraft((current) => ({
+      ...current,
+      legacy_capabilities: current.legacy_capabilities.filter((value) => value !== capability),
+    }));
   }
 
   function beginEdit(team) {
@@ -423,27 +454,31 @@ function TeamManagement({ session, teams, onSave }) {
           <div className="detail-section-heading"><div><p className="eyebrow">ADMIN ONLY</p><h3>{editingId ? `Edit ${editingTeam?.team_name || "team"}` : "Register rescue team"}</h3></div></div>
           <div className="team-form-grid">
             <label>Team name<input value={draft.team_name} maxLength="150" onChange={(event) => updateDraft("team_name", event.target.value)} />{errors.team_name && <small>{errors.team_name}</small>}</label>
-            <label>Capabilities<input value={draft.capabilities} onChange={(event) => updateDraft("capabilities", event.target.value)} placeholder="Flood response, medical first aid" />{errors.capabilities && <small>{errors.capabilities}</small>}</label>
+            <label>Primary category<select value={draft.primary_category} onChange={(event) => updateDraft("primary_category", event.target.value)}><option value="">Select a category</option>{TEAM_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select>{errors.primary_category && <small>{errors.primary_category}</small>}</label>
+            <fieldset className="capability-selector"><legend>Capabilities</legend><p>Select one or more qualifications. Capabilities may span categories.</p><div className="capability-groups">{CAPABILITY_GROUPS.map((group) => <div className="capability-group" key={group.category}><strong>{categoryLabel(group.category)}</strong>{group.capabilities.map((capability) => <label className="capability-option" key={capability.id}><input type="checkbox" checked={draft.capabilities.includes(capability.id)} onChange={() => toggleCapability(capability.id)} /><span>{capability.label}</span></label>)}</div>)}</div>{errors.capabilities && <small>{errors.capabilities}</small>}{draft.legacy_capabilities.length > 0 && <div className="legacy-capabilities"><strong>Legacy values retained for review</strong><p>These values are preserved unless you explicitly remove them.</p><div className="capability-badges">{draft.legacy_capabilities.map((capability) => <span className="legacy-capability" key={capability}>{capability}<button type="button" aria-label={`Remove legacy capability ${capability}`} onClick={() => removeLegacyCapability(capability)}>×</button></span>)}</div></div>}</fieldset>
             <label>Base location name<input value={draft.base_location_name} maxLength="255" onChange={(event) => updateDraft("base_location_name", event.target.value)} />{errors.base_location_name && <small>{errors.base_location_name}</small>}</label>
-            <label>Initial availability<select value={draft.availability} disabled={editingBusyTeam} onChange={(event) => updateDraft("availability", event.target.value)}>{editingBusyTeam && <option value="busy">Busy (assignment managed)</option>}<option value="available">Available</option><option value="offline">Offline</option></select>{errors.availability && <small>{errors.availability}</small>}</label>
+            <label>Availability<select value={draft.availability} disabled={editingBusyTeam} onChange={(event) => updateDraft("availability", event.target.value)}><option value="available">Available</option><option value="busy">Busy{editingBusyTeam ? " (assignment managed)" : ""}</option><option value="offline">Offline</option></select>{errors.availability && <small>{errors.availability}</small>}</label>
             <label>Latitude<input type="number" min="-90" max="90" step="any" value={draft.latitude} onChange={(event) => updateDraft("latitude", event.target.value)} />{errors.latitude && <small>{errors.latitude}</small>}</label>
             <label>Longitude<input type="number" min="-180" max="180" step="any" value={draft.longitude} onChange={(event) => updateDraft("longitude", event.target.value)} />{errors.longitude && <small>{errors.longitude}</small>}</label>
             <label className="team-contact-field">Contact information (optional)<input value={draft.contact_info} maxLength="255" onChange={(event) => updateDraft("contact_info", event.target.value)} />{errors.contact_info && <small>{errors.contact_info}</small>}</label>
           </div>
-          <TeamLocationPicker latitude={draft.latitude} longitude={draft.longitude} onPick={(latitude, longitude) => { updateDraft("latitude", latitude.toFixed(6)); updateDraft("longitude", longitude.toFixed(6)); }} />
+          <TeamLocationPicker latitude={draft.latitude} longitude={draft.longitude} onPick={(latitude, longitude) => { const picked = teamMapPickDraft(latitude, longitude); updateDraft("latitude", picked.latitude); updateDraft("longitude", picked.longitude); }} />
           <button className="primary-button" disabled={isSaving} type="submit">{isSaving ? "Saving..." : editingId ? "Save team changes" : "Register team"}</button>
           {editingBusyTeam && <p className="field-note">Availability is locked while this team has an active incident. Other team details can still be updated.</p>}
         </form>
       )}
-      {teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => (
-        <article className="team-card" key={team.id}>
-          <div className="team-card-heading"><span className={`team-state ${team.availability}`} /><div><strong>{team.team_name}</strong><p>{team.availability}{team.active_assignment_count ? ` · ${team.active_assignment_count} active` : ""}</p></div></div>
-          <div className="capability-badges">{team.capabilities?.length ? team.capabilities.map((capability) => <span key={capability}>{capability}</span>) : <span className="unknown-capability">Capabilities unknown</span>}</div>
+      {teams.length === 0 ? <div className="empty-state">No rescue teams are configured.</div> : <div className="team-grid">{teams.map((team) => {
+        const complete = isTeamProfileComplete(team);
+        const badges = visibleCapabilityBadges(team);
+        return <article className={`team-card ${complete ? "" : "incomplete"}`} key={team.id}>
+          <div className="team-card-heading"><span className={`team-state ${team.availability}`} /><div><strong>{team.team_name}</strong><p>{team.availability}{team.active_assignment_count ? ` · ${team.active_assignment_count} active` : ""}</p></div>{!complete && <span className="profile-badge incomplete">Incomplete Profile</span>}</div>
+          <p className="team-category">{categoryLabel(team.primary_category)}</p>
+          <div className="capability-badges">{badges.visible.length ? badges.visible.map((capability) => <span className={capability.legacy ? "legacy-capability" : ""} key={capability.value}>{capability.label}</span>) : <span className="unknown-capability">Capabilities unknown</span>}{badges.remaining > 0 && <span className="more-capabilities">+{badges.remaining} more</span>}</div>
           <p className="team-location">{team.base_location_name || "Base location unknown"}{team.latitude == null || team.longitude == null ? " · Coordinates unknown" : ` · ${team.latitude}, ${team.longitude}`}</p>
           {team.contact_info && <p className="team-contact">Contact: {team.contact_info}</p>}
-          {isAdmin && <button className="secondary-button" type="button" onClick={() => beginEdit(team)}>Edit team</button>}
-        </article>
-      ))}</div>}
+          {isAdmin && <button className="secondary-button" type="button" onClick={() => beginEdit(team)}>{complete ? "Edit Team" : "Complete Profile"}</button>}
+        </article>;
+      })}</div>}
     </section>
   );
 }
@@ -563,7 +598,7 @@ function RecommendedTeams({ recommendationData, selectedTeamId, onSelectTeam }) 
       {recommendations.length > 0 && <div className="recommendation-list">{recommendations.map((team) => (
         <article className={`recommendation-card ${selectedTeamId === team.team_id ? "selected" : ""}`} key={team.team_id}>
           <div className="recommendation-rank">#{team.rank}</div>
-          <div className="recommendation-content"><div className="recommendation-heading"><strong>{team.team_name}</strong><span className={`team-state ${team.availability}`} /></div><div className="capability-badges">{team.capabilities?.map((capability) => <span key={capability}>{capability}</span>)}</div><p>{recommendationDistance(team)}</p><small>{team.explanation}</small></div>
+          <div className="recommendation-content"><div className="recommendation-heading"><strong>{team.team_name}</strong><span className={`team-state ${team.availability}`} /></div><p className="team-category">{categoryLabel(team.primary_category)}</p><div className="capability-badges">{team.capabilities?.map((capability) => <span key={capability}>{capabilityLabel(capability)}</span>)}</div><p>{recommendationDistance(team)}</p><small>{team.explanation}</small></div>
           <button className="secondary-button" type="button" onClick={() => onSelectTeam(team.team_id)}>{selectedTeamId === team.team_id ? "Selected" : "Select"}</button>
         </article>
       ))}</div>}

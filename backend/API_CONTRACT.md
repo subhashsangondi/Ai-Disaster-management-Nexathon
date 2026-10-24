@@ -173,11 +173,12 @@ Returns the most recent stored analysis, or `404` if no analysis exists.
 ### `GET /incidents/:id/team-recommendations`
 
 Returns deterministic, advisory recommendations for a pending, assignable incident. Only currently
-available teams with a verified capability match are included. Comparable matches are ordered by
-straight-line Haversine distance, with named deterministic tie-breaking. Missing coordinates are
-reported as `distance_km: null`; this is never presented as travel distance or ETA. Confirmed linked
-duplicates and incidents that cannot accept an assignment return `assignment_allowed: false` and no
-recommendations.
+available teams with complete profiles and an explicitly mapped standardized capability match are
+included. Capability match count and the reported incident type take priority; comparable matches are
+ordered by straight-line Haversine distance, with named deterministic tie-breaking. Missing incident
+coordinates are reported as `distance_km: null`; team profiles with missing coordinates are incomplete
+and excluded. Distance is never presented as travel distance or ETA. Confirmed linked duplicates and
+incidents that cannot accept an assignment return `assignment_allowed: false` and no recommendations.
 
 ### `PATCH /incidents/:id/assign`
 
@@ -199,9 +200,11 @@ Allowed transitions are `assigned → in_progress → resolved`. Assignment is p
 
 ### `GET /teams`
 
-Returns all teams, including capabilities, base location, coordinates, availability, optional contact
-information, and active assignment count. Optionally filter with `?availability=available`, `busy`, or
-`offline`. Legacy teams may have `null` capabilities or coordinates.
+Returns all teams, including `primary_category`, stored `capabilities`, `normalized_capabilities`,
+`legacy_capabilities`, base location, coordinates, availability, optional contact information, active
+assignment count, `profile_complete`, and `profile_issues`. Optionally filter with
+`?availability=available`, `busy`, or `offline`. Legacy teams may have null fields and are returned as
+incomplete without modifying their stored data.
 
 ### `GET /teams/:id`
 
@@ -209,14 +212,17 @@ Returns one rescue team with the same authenticated operator/admin projection.
 
 ### `POST /teams` â€” admin only
 
-Registers a team. Required fields are `team_name`, a non-empty `capabilities` string array,
-`base_location_name`, valid `latitude` and `longitude`, and initial `availability` (`available` or
-`offline`). `contact_info` is optional. Registration never creates a responder account.
+Registers a team. Required fields are `team_name`, a supported `primary_category`, a non-empty array of
+standardized capability identifiers, `base_location_name`, valid `latitude` and `longitude`, and initial
+`availability` (`available`, `busy`, or `offline`). `contact_info` is optional. Registration never creates
+a responder account. Supported identifiers are defined in `src/domain/teamProfile.js`.
 
 ### `PATCH /teams/:id` â€” admin only
 
-Updates one or more team fields. Coordinates must be supplied as a pair. The `busy` state remains
-assignment-managed; a team with an active incident cannot be manually made available or offline.
+Updates one or more team fields. Coordinates must be supplied as a pair. A team with an active incident
+cannot have availability changed manually. Known legacy capability labels are normalized when an admin
+explicitly saves them. Unknown legacy values may be retained or removed, but new unknown values are
+rejected.
 
 ## Dashboard — operator/admin
 

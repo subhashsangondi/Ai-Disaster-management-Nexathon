@@ -183,6 +183,8 @@ The AI boundary is intentionally narrow: `analyzeIncident(incident)` returns val
 - Gemini remains primary; Groq fallback uses the same prompt and validation contract. Neither provider can dispatch or resolve an incident.
 - Duplicate detection uses Haversine distance, time/category weighting, and deterministic text similarity. It only flags candidates; it never merges or deletes reports.
 - Assignments use row locks and a transaction to prevent double assignment.
+- Rescue-team registration uses stable category/capability identifiers. Legacy values remain stored until an admin explicitly edits the profile, and unknown qualifications are never inferred.
+- Team recommendations require an available team with a complete profile and an explicit capability match; Haversine distance is used only after qualification matching.
 - Only `assigned → in_progress → resolved` status transitions are allowed; assignment itself uses the dedicated endpoint.
 - Resolving an incident makes its assigned team available again.
 - Passwords are hashed with bcrypt and public registration always creates the `public` role.

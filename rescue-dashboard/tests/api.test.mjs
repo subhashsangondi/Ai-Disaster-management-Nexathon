@@ -169,7 +169,8 @@ test("team management uses authenticated admin endpoints and exact payloads", as
   };
   const team = {
     team_name: "Flood Unit",
-    capabilities: ["Flood response"],
+    primary_category: "flood_water_rescue",
+    capabilities: ["flood_response"],
     base_location_name: "Harbor",
     latitude: 12.9,
     longitude: 77.5,

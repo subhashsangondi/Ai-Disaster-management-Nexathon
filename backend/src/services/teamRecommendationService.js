@@ -1,18 +1,80 @@
 const db = require('../config/database');
+const {
+  analyzeCapabilities,
+  capabilityLabel,
+  profileCompleteness,
+} = require('../domain/teamProfile');
 const { AppError } = require('../utils/apiResponse');
 
 const EARTH_RADIUS_KM = 6371.0088;
-const GENERAL_CAPABILITIES = new Set(['all hazards', 'all hazard', 'general rescue', 'multi hazard']);
-const STOP_WORDS = new Set(['response', 'rescue', 'team', 'unit', 'service', 'services', 'emergency']);
-const TYPE_ALIASES = {
-  flood: ['water', 'swift water', 'flood'],
-  fire: ['fire', 'firefighting', 'fire suppression'],
-  medical: ['medical', 'first aid', 'trauma', 'paramedic'],
-  earthquake: ['earthquake', 'structural collapse', 'urban search'],
-  landslide: ['landslide', 'search and rescue', 'debris'],
-  cyclone: ['cyclone', 'storm', 'wind'],
-  storm: ['storm', 'cyclone', 'wind'],
-};
+const GENERAL_CAPABILITIES = new Set(['general_rescue', 'emergency_assessment']);
+
+// Covers the public SOS values and conservative AI classifications already in use.
+// Rules never grant qualifications; they only match capabilities stored on a team.
+const INCIDENT_CAPABILITY_RULES = Object.freeze([
+  {
+    terms: ['flood', 'water emergency', 'drowning'],
+    category: 'flood_water_rescue',
+    capabilities: ['flood_response', 'swift_water_rescue', 'boat_rescue', 'water_evacuation'],
+  },
+  {
+    terms: ['fire', 'urban fire', 'building fire'],
+    category: 'fire_urban_rescue',
+    capabilities: ['fire_suppression', 'urban_search_and_rescue', 'structural_collapse_rescue'],
+  },
+  {
+    terms: ['medical emergency', 'medical', 'mass casualty', 'ambulance', 'trauma', 'injury'],
+    category: 'medical_response',
+    capabilities: ['first_aid', 'trauma_care', 'patient_stabilization', 'ambulance_support'],
+  },
+  {
+    terms: ['earthquake', 'structural collapse', 'collapsed building'],
+    category: 'fire_urban_rescue',
+    capabilities: ['structural_collapse_rescue', 'urban_search_and_rescue', 'debris_search', 'first_aid'],
+  },
+  {
+    terms: ['trapped person', 'trapped'],
+    category: 'fire_urban_rescue',
+    capabilities: ['confined_space_rescue', 'structural_collapse_rescue', 'urban_search_and_rescue', 'first_aid'],
+  },
+  {
+    terms: ['road accident', 'vehicle accident', 'traffic accident'],
+    category: 'medical_response',
+    capabilities: ['first_aid', 'trauma_care', 'patient_stabilization', 'ambulance_support', 'general_rescue'],
+  },
+  {
+    terms: ['landslide', 'debris'],
+    category: 'search_evacuation',
+    capabilities: ['debris_search', 'ground_search_and_rescue', 'evacuation'],
+  },
+  {
+    terms: ['missing person', 'search and rescue', 'search & rescue'],
+    category: 'search_evacuation',
+    capabilities: ['missing_person_search', 'ground_search_and_rescue', 'evacuation', 'debris_search'],
+  },
+  {
+    terms: ['cyclone', 'storm', 'hurricane'],
+    category: 'general_disaster_response',
+    capabilities: ['evacuation', 'emergency_assessment', 'shelter_assistance', 'general_rescue'],
+  },
+  {
+    terms: ['rescue required', 'other'],
+    category: 'general_disaster_response',
+    capabilities: ['general_rescue', 'emergency_assessment', 'evacuation', 'logistics_support'],
+  },
+]);
+
+function normalizeType(value) {
+  return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/[^a-z0-9 &]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function capabilityRuleFor(type) {
+  const normalized = normalizeType(type);
+  if (!normalized) return null;
+  return INCIDENT_CAPABILITY_RULES.find((rule) => rule.terms.some((term) => (
+    normalized === term || normalized.includes(term)
+  ))) || null;
+}
 
 function toRadians(value) {
   return value * (Math.PI / 180);
@@ -32,69 +94,76 @@ function haversineDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB) {
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function normalize(value) {
-  return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-}
+function scoreCapabilities(capabilities, reportedType, analyzedType, primaryCategory = null) {
+  const recognized = analyzeCapabilities(capabilities).recognized;
+  if (recognized.length === 0) return {
+    score: 0, matched: null, matched_capabilities: [], source: null,
+  };
 
-function meaningfulTokens(value) {
-  return new Set(normalize(value).split(' ').filter((token) => token.length > 2 && !STOP_WORDS.has(token)));
-}
+  const reportedRule = capabilityRuleFor(reportedType);
+  const analyzedRule = capabilityRuleFor(analyzedType);
+  const reportedMatches = reportedRule
+    ? reportedRule.capabilities.filter((id) => recognized.includes(id)) : [];
+  const analyzedMatches = analyzedRule
+    ? analyzedRule.capabilities.filter((id) => recognized.includes(id) && !reportedMatches.includes(id)) : [];
+  let matchedCapabilities = [...reportedMatches, ...analyzedMatches];
+  let score = (reportedMatches.length * 100) + (analyzedMatches.length * 50);
+  if (score > 0 && reportedRule?.category === primaryCategory) score += 20;
+  else if (score > 0 && analyzedRule?.category === primaryCategory) score += 10;
 
-function aliasesFor(type) {
-  const normalized = normalize(type);
-  const aliases = new Set([normalized]);
-  for (const [key, values] of Object.entries(TYPE_ALIASES)) {
-    if (normalized.includes(key) || values.some((value) => normalized.includes(value))) {
-      aliases.add(key);
-      values.forEach((value) => aliases.add(value));
+  let source = reportedMatches.length > 0 ? 'reported incident type'
+    : analyzedMatches.length > 0 ? 'operator-reviewed AI classification' : null;
+  if (score === 0) {
+    const generalMatch = recognized.find((id) => GENERAL_CAPABILITIES.has(id));
+    if (generalMatch) {
+      score = 10;
+      matchedCapabilities = [generalMatch];
+      source = 'general disaster capability';
     }
   }
-  return aliases;
-}
 
-function scoreCapabilities(capabilities, reportedType, analyzedType) {
-  if (!Array.isArray(capabilities) || capabilities.length === 0) return { score: 0, matched: null, source: null };
-  const sources = [
-    { type: reportedType, source: 'reported incident type', priority: 3 },
-    ...(analyzedType ? [{ type: analyzedType, source: 'operator-reviewed AI classification', priority: 2 }] : []),
-  ];
-  let best = { score: 0, matched: null, source: null };
-  for (const capability of capabilities) {
-    const normalizedCapability = normalize(capability);
-    if (GENERAL_CAPABILITIES.has(normalizedCapability) && best.score < 1) {
-      best = { score: 1, matched: capability, source: 'general multi-hazard capability' };
-    }
-    for (const item of sources) {
-      const aliases = aliasesFor(item.type);
-      const direct = [...aliases].some((alias) => alias && (normalizedCapability.includes(alias) || alias.includes(normalizedCapability)));
-      const capabilityTokens = meaningfulTokens(capability);
-      const tokenMatch = [...aliases].some((alias) => [...meaningfulTokens(alias)].some((token) => capabilityTokens.has(token)));
-      const score = direct ? item.priority + 2 : tokenMatch ? item.priority + 1 : 0;
-      if (score > best.score) best = { score, matched: capability, source: item.source };
-    }
-  }
-  return best;
+  return {
+    score,
+    matched: matchedCapabilities[0] || null,
+    matched_capabilities: matchedCapabilities,
+    source,
+  };
 }
 
 function rankTeams(teams, incident) {
   return teams.filter((team) => team.availability === 'available').map((team) => {
-    const capability = scoreCapabilities(team.capabilities, incident.emergency_type, incident.analyzed_disaster_type);
+    const profile = profileCompleteness(team);
+    if (!profile.complete) return null;
+    const capability = scoreCapabilities(
+      team.capabilities,
+      incident.emergency_type,
+      incident.analyzed_disaster_type,
+      team.primary_category,
+    );
+    if (capability.score === 0) return null;
     const distance = haversineDistanceKm(incident.latitude, incident.longitude, team.latitude, team.longitude);
+    const labels = capability.matched_capabilities.map(capabilityLabel);
     return {
       team_id: team.id,
       team_name: team.team_name,
-      capabilities: team.capabilities,
+      primary_category: team.primary_category,
+      capabilities: profile.recognized,
       availability: team.availability,
       base_location_name: team.base_location_name,
+      profile_complete: true,
       distance_km: distance === null ? null : Number(distance.toFixed(2)),
       capability_match: capability.matched,
+      capability_matches: capability.matched_capabilities,
       capability_score: capability.score,
-      explanation: capability.score > 0
-        ? `${capability.matched} matches the ${capability.source}; ${distance === null ? 'distance is unknown because coordinates are unavailable' : `straight-line distance is ${distance.toFixed(2)} km`}.`
-        : 'No verified capability match was found for this incident type.',
+      explanation: `Recommended because this team supports ${labels.join(' and ')} and is available; ${
+        distance === null
+          ? 'distance is unknown because the incident coordinates are unavailable'
+          : `straight-line distance is ${distance.toFixed(2)} km`
+      }.`,
     };
-  }).filter((team) => team.capability_score > 0)
+  }).filter(Boolean)
     .sort((left, right) => right.capability_score - left.capability_score
+      || right.capability_matches.length - left.capability_matches.length
       || (left.distance_km === null) - (right.distance_km === null)
       || (left.distance_km ?? Infinity) - (right.distance_km ?? Infinity)
       || left.team_name.localeCompare(right.team_name)
@@ -133,7 +202,8 @@ async function getTeamRecommendations(incidentId, database = db) {
   }
 
   const teamResult = await database.query(
-    `SELECT id, team_name, availability, capabilities, latitude, longitude, base_location_name
+    `SELECT id, team_name, availability, primary_category, capabilities,
+            latitude, longitude, base_location_name
      FROM rescue_teams WHERE availability = 'available' ORDER BY team_name, id`,
   );
   const recommendations = rankTeams(teamResult.rows, incident);
@@ -145,12 +215,14 @@ async function getTeamRecommendations(incidentId, database = db) {
     distance_method: 'straight_line_haversine_km',
     message: recommendations.length > 0
       ? 'Recommendations are advisory. An operator must review and dispatch a team.'
-      : 'No available team has a verified capability match. Review team data or use the manual assignment list.',
+      : 'No available team has both a complete profile and a verified capability match. Review team profiles or use the manual assignment list.',
     recommendations,
   };
 }
 
 module.exports = {
+  INCIDENT_CAPABILITY_RULES,
+  capabilityRuleFor,
   haversineDistanceKm,
   scoreCapabilities,
   rankTeams,

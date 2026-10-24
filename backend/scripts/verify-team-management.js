@@ -86,7 +86,8 @@ async function main() {
       token: admin.token,
       body: {
         team_name: `Integration Flood Unit ${marker}`,
-        capabilities: ['Flood response', 'Medical first aid'],
+        primary_category: 'flood_water_rescue',
+        capabilities: ['flood_response', 'first_aid'],
         base_location_name: `Verification Base ${marker}`,
         latitude: 12.9716,
         longitude: 77.5946,
@@ -97,7 +98,8 @@ async function main() {
     ids.teamId = createdTeam.id;
 
     const storedTeam = await db.query('SELECT * FROM rescue_teams WHERE id = $1', [ids.teamId]);
-    assert(storedTeam.rows[0]?.capabilities.includes('Flood response'), 'registered capabilities must be stored in PostgreSQL');
+    assert(storedTeam.rows[0]?.primary_category === 'flood_water_rescue', 'registered category must be stored in PostgreSQL');
+    assert(storedTeam.rows[0]?.capabilities.includes('flood_response'), 'registered capabilities must be stored in PostgreSQL');
     assert(Number(storedTeam.rows[0]?.latitude) === 12.9716, 'registered coordinates must be stored in PostgreSQL');
 
     const passwordHash = await bcrypt.hash(responderPassword, 12);
