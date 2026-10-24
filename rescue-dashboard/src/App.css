@@ -348,6 +348,22 @@ h1 {
   color: #1e40af;
 }
 
+.provider-badge {
+  display: inline-block;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 4px 8px;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.provider-badge.fallback {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .human-review p {
   margin: 0;
 }

@@ -8,6 +8,8 @@ const app = require('../src/app');
 const env = require('../src/config/env');
 const incidentRepository = require('../src/repositories/incidentRepository');
 const assignmentService = require('../src/services/assignmentService');
+const aiService = require('../src/services/aiService');
+const duplicateService = require('../src/services/duplicateService');
 const { AppError } = require('../src/utils/apiResponse');
 
 const incidentId = '30000000-0000-4000-8000-000000000001';
@@ -126,5 +128,31 @@ describe('protected incident operations', () => {
       .send({ team_id: teamId });
     expect(response.status).toBe(409);
     expect(response.body.success).toBe(false);
+  });
+
+  it('preserves the analysis endpoint contract and adds safe provider metadata', async () => {
+    vi.spyOn(incidentRepository, 'getIncidentById').mockResolvedValue({
+      id: incidentId,
+      emergency_type: 'flood',
+      description: 'Water is entering a building with two people inside.',
+    });
+    vi.spyOn(aiService, 'analyzeIncident').mockResolvedValue({
+      analysis: {
+        disaster_type: 'flood', urgency: 'high', victim_count: 2,
+        summary: 'Flooding reported.', reasoning: 'Water is entering the building.', requires_review: true,
+      },
+      provider_metadata: { provider: 'groq', model: 'openai/gpt-oss-20b', fallback_used: true },
+    });
+    vi.spyOn(incidentRepository, 'saveAnalysis').mockResolvedValue({
+      id: '50000000-0000-4000-8000-000000000001', disaster_type: 'flood', urgency: 'high',
+      victim_count: 2, summary: 'Flooding reported.', reasoning: 'Water is entering the building.', requires_review: true,
+    });
+    vi.spyOn(duplicateService, 'findPossibleDuplicates').mockResolvedValue([]);
+
+    const response = await request(app).post(`/api/incidents/${incidentId}/analyze`).set('Authorization', `Bearer ${operatorToken}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data.analysis).toMatchObject({ disaster_type: 'flood', urgency: 'high', requires_review: true });
+    expect(response.body.data.provider_metadata).toEqual({ provider: 'groq', model: 'openai/gpt-oss-20b', fallback_used: true });
+    expect(response.body.data.possible_duplicates).toEqual([]);
   });
 });

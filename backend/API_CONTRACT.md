@@ -151,12 +151,20 @@ Calls the configured Gemini model, validates structured output, stores it, runs 
       "reasoning": "The report explicitly mentions trapped and unconscious people.",
       "requires_review": true
     },
-    "possible_duplicates": []
+    "possible_duplicates": [],
+    "provider_metadata": {
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "fallback_used": false
+    }
   }
 }
 ```
 
-Returns `503` if Gemini is unconfigured, unavailable, times out, or returns invalid structured output. Existing SOS data is unaffected.
+Gemini is attempted first. Groq is attempted once when Gemini is unavailable, rate limited, times out,
+or returns invalid structured output. `provider_metadata` contains only safe provider/model information.
+Returns `503` with a manual-review message if neither provider returns valid structured analysis. Existing
+SOS data is unaffected.
 
 ### `GET /incidents/:id/analysis`
 

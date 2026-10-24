@@ -5,6 +5,10 @@ const { z } = require('zod');
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const isTest = process.env.NODE_ENV === 'test';
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -20,9 +24,13 @@ const envSchema = z.object({
   PUBLIC_TRACK_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
-  GEMINI_API_KEY: z.string().min(1).optional(),
+  GEMINI_API_KEY: optionalSecret,
   GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
   GEMINI_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  GROQ_API_BASE_URL: z.url().default('https://api.groq.com/openai/v1'),
+  GROQ_API_KEY: optionalSecret,
+  GROQ_MODEL: z.string().min(1).default('openai/gpt-oss-20b'),
+  GROQ_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   DUPLICATE_LOOKBACK_HOURS: z.coerce.number().positive().default(24),
   DUPLICATE_RADIUS_KM: z.coerce.number().positive().default(10),
 });

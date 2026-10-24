@@ -9,7 +9,7 @@ This MVP is not a certified emergency dispatch system. Submitting an SOS stores 
 - Node.js 22 LTS or newer (`node --version`)
 - npm
 - PostgreSQL 15 or newer
-- A Google Gemini API key only if AI analysis will be exercised
+- A Google Gemini API key and/or Groq API key only if AI analysis will be exercised
 
 ## 1. Install dependencies
 
@@ -51,6 +51,10 @@ Important settings:
 | `GEMINI_API_KEY` | Gemini key; never commit this value |
 | `GEMINI_MODEL` | Supported model ID; default `gemini-2.5-flash` |
 | `GEMINI_TIMEOUT_MS` | Maximum analysis wait; default 15 seconds |
+| `GROQ_API_BASE_URL` | Groq OpenAI-compatible base URL |
+| `GROQ_API_KEY` | Groq fallback key; never commit this value |
+| `GROQ_MODEL` | Groq fallback model; default `openai/gpt-oss-20b` |
+| `GROQ_TIMEOUT_MS` | Maximum Groq fallback wait; default 15 seconds |
 
 `.env` and generated dependencies are ignored by Git.
 
@@ -109,7 +113,7 @@ A `503` health response with `application: "up"` means the process is running bu
 npm test
 ```
 
-Tests use mocked PostgreSQL-facing methods and an injected mock Gemini client. They do not call Gemini or a live emergency system. To rerun while editing:
+Tests use mocked PostgreSQL-facing methods and injected AI providers. They do not call Gemini, Groq, or a live emergency system. To rerun while editing:
 
 ```bash
 npm run test:watch
@@ -165,17 +169,18 @@ const response = await fetch('http://localhost:4000/api/incidents?page=1&limit=2
 
 - `src/app.js`: Express composition and middleware
 - `src/controllers`: HTTP orchestration
-- `src/services`: Gemini, duplicate matching, and assignment transactions
+- `src/services`: Gemini/Groq fallback orchestration, duplicate matching, and assignment transactions
 - `src/repositories`: parameterized PostgreSQL access
 - `src/validators`: Zod request and AI schemas
 - `db`: schema and simulated demo seed
 - `tests`: repeatable API/service tests with mocks
 
-The AI boundary is intentionally narrow: `analyzeIncident(incident)` returns validated structured data. The AI team can refine `src/services/aiService.js` without changing route/controller contracts.
+The AI boundary is intentionally narrow: `analyzeIncident(incident)` returns validated structured analysis plus safe provider metadata. Gemini is attempted once, then Groq is attempted once if needed. When neither returns valid output, the API requires manual operator review.
 
 ## Operational notes
 
 - AI analysis is explicit and never blocks initial SOS persistence.
+- Gemini remains primary; Groq fallback uses the same prompt and validation contract. Neither provider can dispatch or resolve an incident.
 - Duplicate detection uses Haversine distance, time/category weighting, and deterministic text similarity. It only flags candidates; it never merges or deletes reports.
 - Assignments use row locks and a transaction to prevent double assignment.
 - Only `assigned → in_progress → resolved` status transitions are allowed; assignment itself uses the dedicated endpoint.

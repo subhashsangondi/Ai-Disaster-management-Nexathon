@@ -22,8 +22,8 @@ async function analyze(req, res) {
   const incident = await incidentRepository.getIncidentById(req.params.id);
   if (!incident) throw new AppError(404, 'Incident not found');
 
-  const analysis = await aiService.analyzeIncident(incident);
-  const storedAnalysis = await incidentRepository.saveAnalysis(incident.id, analysis);
+  const analysisResult = await aiService.analyzeIncident(incident);
+  const storedAnalysis = await incidentRepository.saveAnalysis(incident.id, analysisResult.analysis);
   const duplicates = await duplicateService.findPossibleDuplicates(incident);
   const storedDuplicates = duplicates.length
     ? await incidentRepository.savePossibleDuplicates(incident.id, duplicates)
@@ -31,7 +31,11 @@ async function analyze(req, res) {
 
   return success(res, {
     message: 'Advisory AI analysis completed; human review remains required',
-    data: { analysis: storedAnalysis, possible_duplicates: storedDuplicates },
+    data: {
+      analysis: storedAnalysis,
+      possible_duplicates: storedDuplicates,
+      provider_metadata: analysisResult.provider_metadata,
+    },
   });
 }
 

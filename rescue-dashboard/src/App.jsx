@@ -42,6 +42,7 @@ import {
   teamToDraft,
   validateTeamDraft,
 } from "./teamManagement.js";
+import { formatProviderMetadata } from "./analysisPresentation.js";
 
 const STATUS_LABELS = {
   pending: "Pending",
@@ -450,12 +451,14 @@ function TeamManagement({ session, teams, onSave }) {
 function AnalysisPanel({ incident, analysisResult, isAnalyzing, onAnalyze, onSelectIncident }) {
   const analysis = analysisResult?.analysis || incident.latest_analysis;
   const duplicates = analysisResult?.possible_duplicates || [];
+  const provider = formatProviderMetadata(analysisResult?.provider_metadata);
   return (
     <section className="detail-section" aria-labelledby="analysis-title">
       <div className="detail-section-heading">
         <div>
           <p className="eyebrow">ADVISORY ONLY</p>
-          <h3 id="analysis-title">Gemini analysis</h3>
+          <h3 id="analysis-title">AI analysis</h3>
+          {provider && <span className={`provider-badge ${provider.fallbackUsed ? "fallback" : "primary"}`} title={`Model: ${provider.model}`}>{provider.label} · {provider.model}</span>}
         </div>
         <button className="secondary-button" type="button" onClick={onAnalyze} disabled={isAnalyzing}>
           {isAnalyzing ? "Analyzing..." : analysis ? "Run new analysis" : "Analyze incident"}

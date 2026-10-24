@@ -72,12 +72,14 @@ test("analysis, assignment, and status mutations use backend-defined payloads", 
   const requests = [];
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
-    if (url.endsWith("/analyze")) return response({ success: true, message: "Analyzed", data: { analysis: { urgency: "critical" }, possible_duplicates: [] } });
+    if (url.endsWith("/analyze")) return response({ success: true, message: "Analyzed", data: { analysis: { urgency: "critical" }, possible_duplicates: [], provider_metadata: { provider: "groq", model: "openai/gpt-oss-20b", fallback_used: true } } });
     if (url.endsWith("/assign")) return response({ success: true, message: "Assigned", data: { assignment: {}, team: {} } });
     return response({ success: true, message: "Updated", data: { id: "incident-1", status: "in_progress" } });
   };
 
-  assert.equal((await analyzeIncident("jwt", "incident-1")).analysis.urgency, "critical");
+  const analyzed = await analyzeIncident("jwt", "incident-1");
+  assert.equal(analyzed.analysis.urgency, "critical");
+  assert.equal(analyzed.provider_metadata.provider, "groq");
   await assignTeam("jwt", "incident-1", "team-1");
   await updateIncidentStatus("jwt", "incident-1", "in_progress");
 
